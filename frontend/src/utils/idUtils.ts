@@ -51,13 +51,12 @@ export function reindexEtlData(etl: EtlResult): EtlResult {
   const newChunks = etl.child_chunks.map((chunk) => {
     const newChunkId = `${docId}_c${String(chunkIdx++).padStart(3, '0')}`;
     chunkIdMap[chunk.chunk_id] = newChunkId;
+    const meta = { ...(chunk.metadata || {}) };
+    delete (meta as Record<string, any>).original_chunk_id;
     return {
       ...chunk,
       chunk_id: newChunkId,
-      metadata: {
-        ...(chunk.metadata || {}),
-        original_chunk_id: chunk.metadata?.original_chunk_id || chunk.chunk_id,
-      },
+      metadata: meta,
     };
   });
 

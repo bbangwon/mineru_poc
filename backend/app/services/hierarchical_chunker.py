@@ -662,10 +662,8 @@ class HierarchicalChunker:
             chunk_id_map[old_c_id] = new_c_id
 
             chunk["chunk_id"] = new_c_id
-            if "metadata" not in chunk or not isinstance(chunk["metadata"], dict):
-                chunk["metadata"] = {}
-            if "original_chunk_id" not in chunk["metadata"]:
-                chunk["metadata"]["original_chunk_id"] = old_c_id
+            if isinstance(chunk.get("metadata"), dict):
+                chunk["metadata"].pop("original_chunk_id", None)
             new_chunks.append(chunk)
 
         # 3. 섹션 내 부모 섹션 및 자식 청크 참조 일괄 갱신
