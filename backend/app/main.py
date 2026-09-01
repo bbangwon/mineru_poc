@@ -1,10 +1,12 @@
 import json
 import os
+import time
+import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import pypdf
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -49,6 +51,9 @@ mineru_svc = MineruService()
 latest_etl_result: Optional[dict] = None
 current_selected_pdf_name: Optional[str] = None
 
+# In-memory background jobs registry
+jobs_db: Dict[str, Dict[str, Any]] = {}
+
 
 class ParseRequest(BaseModel):
     filename: Optional[str] = None
@@ -57,6 +62,88 @@ class ParseRequest(BaseModel):
     end_page: Optional[int] = 2
     lang: Optional[str] = "korean"
     backend: Optional[str] = "pipeline"
+    method: Optional[str] = "auto"
+    formula: Optional[bool] = True
+    strategy: Optional[str] = "general"
+
+
+def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
+    """백그라운드에서 실행되는 MinerU 파싱 및 계층 청킹 워커"""
+    global latest_etl_result, current_selected_pdf_name
+    pdf_path = Path(pdf_path_str)
+    job = jobs_db.get(task_id)
+    if not job:
+        return
+
+    job["status"] = "running"
+    job["progress_msg"] = "MinerU 파이프라인 엔진으로 PDF 파싱 중..."
+    start_time = time.time()
+
+    all_pages = req_data.get("all_pages", False)
+    start_p = None if all_pages else req_data.get("start_page", 0)
+    end_p = None if all_pages else req_data.get("end_page", 2)
+    method = req_data.get("method") or "auto"
+    formula = True if req_data.get("formula") is None else req_data.get("formula")
+    backend = req_data.get("backend") or "pipeline"
+    lang = req_data.get("lang") or "korean"
+    strategy = req_data.get("strategy") or "general"
+
+    output_dir = BASE_DIR / "output" / f"mineru_{backend}_{method}_{lang}"
+
+    try:
+        parse_res = mineru_svc.parse_pdf(
+            pdf_path=pdf_path,
+            output_dir=output_dir,
+            start_page=start_p,
+            end_page=end_p,
+            lang=lang,
+            backend=backend,
+            method=method,
+            formula=formula,
+        )
+
+        if not parse_res.get("success"):
+            job["status"] = "failed"
+            job["error"] = parse_res.get("error", "MinerU parse failed")
+            job["elapsed_time"] = round(time.time() - start_time, 1)
+            return
+
+        job["progress_msg"] = "문서 위계 구조 및 법률 조문 계층 청킹 중..."
+
+        content_list = parse_res.get("content_list", [])
+        if not content_list:
+            found = find_latest_content_list()
+            if found:
+                content_list = found[1]
+
+        chunker = HierarchicalChunker(doc_id=f"doc_{pdf_path.stem[:12]}")
+        etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem, strategy=strategy)
+        etl_res["elapsed_time"] = parse_res.get("elapsed_time", round(time.time() - start_time, 1))
+        etl_res["active_pdf"] = pdf_path.name
+        etl_res["total_pages"] = get_pdf_page_count(pdf_path)
+
+        for chunk in etl_res.get("child_chunks", []):
+            if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
+                img_p = Path(parse_res.get("output_dir", "")) / chunk["image_path"]
+                if img_p.exists():
+                    try:
+                        rel_to_output = img_p.relative_to(OUTPUT_DIR)
+                        chunk["image_url"] = f"/output/{rel_to_output}"
+                    except Exception:
+                        pass
+
+        latest_etl_result = etl_res
+        current_selected_pdf_name = pdf_path.name
+
+        job["status"] = "completed"
+        job["progress_msg"] = "파싱 및 청킹 완료"
+        job["result"] = etl_res
+        job["elapsed_time"] = round(time.time() - start_time, 1)
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["elapsed_time"] = round(time.time() - start_time, 1)
 
 
 class SelectPdfRequest(BaseModel):
@@ -201,7 +288,7 @@ async def get_favicon():
 
 
 @app.get("/api/etl/sample")
-async def get_sample_etl():
+async def get_sample_etl(strategy: Optional[str] = "general"):
     """기존 파싱 결과를 바탕으로 부모-자식 청크 & 표 원형 보존 ETL 결과 반환"""
     global latest_etl_result
     found = find_latest_content_list()
@@ -211,7 +298,7 @@ async def get_sample_etl():
     file_path, content_list = found
     doc_name = file_path.parent.parent.name
     chunker = HierarchicalChunker(doc_id="doc_asbestos")
-    etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name)
+    etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
 
     # 표 이미지 상대 URL 보정 (/output/...)
     for chunk in etl_res.get("child_chunks", []):
@@ -247,7 +334,9 @@ async def run_etl_parse(req: ParseRequest):
     start_p = None if req.all_pages else req.start_page
     end_p = None if req.all_pages else req.end_page
 
-    output_dir = BASE_DIR / "output" / f"mineru_{req.backend}_{req.lang}"
+    method = req.method or "auto"
+    formula = True if req.formula is None else req.formula
+    output_dir = BASE_DIR / "output" / f"mineru_{req.backend}_{method}_{req.lang}"
     parse_res = mineru_svc.parse_pdf(
         pdf_path=pdf_path,
         output_dir=output_dir,
@@ -255,6 +344,8 @@ async def run_etl_parse(req: ParseRequest):
         end_page=end_p,
         lang=req.lang or "korean",
         backend=req.backend or "pipeline",
+        method=method,
+        formula=formula,
     )
 
     if not parse_res.get("success"):
@@ -268,8 +359,9 @@ async def run_etl_parse(req: ParseRequest):
         if found:
             content_list = found[1]
 
+    chunk_strat = req.strategy or "general"
     chunker = HierarchicalChunker(doc_id=f"doc_{pdf_path.stem[:12]}")
-    etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem)
+    etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem, strategy=chunk_strat)
     etl_res["elapsed_time"] = parse_res.get("elapsed_time", 0)
     etl_res["active_pdf"] = pdf_path.name
     etl_res["total_pages"] = get_pdf_page_count(pdf_path)
@@ -287,6 +379,69 @@ async def run_etl_parse(req: ParseRequest):
 
     latest_etl_result = etl_res
     return etl_res
+
+
+@app.post("/api/etl/parse-job")
+async def start_etl_job(req: ParseRequest, background_tasks: BackgroundTasks):
+    """비동기 백그라운드 태스크 등록: 즉시 task_id 반환 (타임아웃 방지)"""
+    global current_selected_pdf_name
+    pdf_path = None
+    if req.filename:
+        p1 = DOCS_DIR / req.filename
+        pdf_path = p1 if p1.exists() else None
+
+    if not pdf_path:
+        pdf_path = get_active_pdf_path()
+
+    if not pdf_path or not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Target PDF not found")
+
+    current_selected_pdf_name = pdf_path.name
+    task_id = f"job_{uuid.uuid4().hex[:8]}"
+
+    jobs_db[task_id] = {
+        "task_id": task_id,
+        "status": "pending",
+        "progress_msg": "태스크가 백그라운드 대기열에 등록되었습니다...",
+        "filename": pdf_path.name,
+        "strategy": req.strategy or "general",
+        "created_at": time.time(),
+        "elapsed_time": 0,
+        "result": None,
+        "error": None,
+    }
+
+    background_tasks.add_task(process_etl_job, task_id, req.model_dump(), str(pdf_path))
+    return {
+        "success": True,
+        "task_id": task_id,
+        "status": "pending",
+        "message": "백그라운드 파싱 작업이 등록되었습니다."
+    }
+
+
+@app.get("/api/etl/jobs/active")
+async def get_active_job():
+    """현재 진행 중인 가장 최근 백그라운드 작업 반환 (새로고침 시 폴링 복구용)"""
+    for task_id, job in reversed(list(jobs_db.items())):
+        if job["status"] in ["pending", "running"]:
+            job_copy = dict(job)
+            job_copy["elapsed_time"] = round(time.time() - job["created_at"], 1)
+            return job_copy
+    return {"active": False}
+
+
+@app.get("/api/etl/jobs/{task_id}")
+async def get_job_status(task_id: str):
+    """특정 백그라운드 태스크의 진행 상태 및 완료 결과 조회"""
+    job = jobs_db.get(task_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    job_copy = dict(job)
+    if job["status"] in ["pending", "running"]:
+        job_copy["elapsed_time"] = round(time.time() - job["created_at"], 1)
+    return job_copy
 
 
 @app.get("/api/etl/export/jsonl")

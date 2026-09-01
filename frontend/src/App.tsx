@@ -5,8 +5,8 @@ import { StatCards } from './components/StatCards';
 import { HierarchyTree } from './components/HierarchyTree';
 import { ChunkExplorer } from './components/ChunkExplorer';
 import { JsonlModal } from './components/JsonlModal';
-import { getPdfList, selectPdf, uploadPdf, getEtlSample, runEtlParse } from './api/client';
-import type { PdfItem, EtlResult, ChildChunk } from './types';
+import { getPdfList, selectPdf, uploadPdf, getEtlSample, startEtlJob, getJobStatus, getActiveJob } from './api/client';
+import type { PdfItem, EtlResult, ChildChunk, JobStatusResponse } from './types';
 
 export function App() {
   const [pdfList, setPdfList] = useState<PdfItem[]>([]);
@@ -14,11 +14,15 @@ export function App() {
   const [isUploading, setIsUploading] = useState(false);
 
   const [engine, setEngine] = useState('pipeline');
+  const [method, setMethod] = useState('auto');
+  const [formula, setFormula] = useState(true);
+  const [strategy, setStrategy] = useState<string>('general');
   const [allPages, setAllPages] = useState(true);
   const [startPage, setStartPage] = useState(0);
   const [endPage, setEndPage] = useState(2);
 
   const [isParsing, setIsParsing] = useState(false);
+  const [activeJob, setActiveJob] = useState<JobStatusResponse | null>(null);
   const [isLoadingEtl, setIsLoadingEtl] = useState(true);
   const [etlData, setEtlData] = useState<EtlResult | null>(null);
 
@@ -33,6 +37,8 @@ export function App() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const isLegalDoc = (name: string) => /규정|지침|기준|법률|조례|훈령|전문/.test(name);
+
   // 1. Initial Data Fetching
   const fetchPdfs = useCallback(async () => {
     try {
@@ -40,12 +46,18 @@ export function App() {
       setPdfList(data.pdfs || []);
       if (data.current) {
         setSelectedPdf(data.current);
+        if (isLegalDoc(data.current)) {
+          setStrategy('legal');
+        }
         const currentItem = (data.pdfs || []).find((p) => p.filename === data.current);
         if (currentItem) {
           setEndPage(Math.max(0, currentItem.total_pages - 1));
         }
       } else if (data.pdfs && data.pdfs.length > 0) {
         setSelectedPdf(data.pdfs[0].filename);
+        if (isLegalDoc(data.pdfs[0].filename)) {
+          setStrategy('legal');
+        }
         setEndPage(Math.max(0, data.pdfs[0].total_pages - 1));
       }
     } catch (err: any) {
@@ -62,6 +74,9 @@ export function App() {
       if (data.active_pdf) {
         setSelectedPdf(data.active_pdf);
       }
+      if (data.strategy) {
+        setStrategy(data.strategy);
+      }
     } catch (err: any) {
       console.warn('ETL 기존 데이터 로드 건너뜀:', err.message);
     } finally {
@@ -69,14 +84,69 @@ export function App() {
     }
   }, []);
 
+  // Check if there is an active background task running on mount
+  const checkActiveTask = useCallback(async () => {
+    try {
+      const runningJob = await getActiveJob();
+      if (runningJob && (runningJob.status === 'running' || runningJob.status === 'pending')) {
+        setActiveJob(runningJob);
+        setIsParsing(true);
+        if (runningJob.filename) {
+          setSelectedPdf(runningJob.filename);
+        }
+        showToast(`기존 실행 중인 백그라운드 태스크(${runningJob.task_id})를 연결했습니다.`);
+      }
+    } catch (err) {
+      console.warn('Active task check failed:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPdfs();
     fetchSample();
-  }, [fetchPdfs, fetchSample]);
+    checkActiveTask();
+  }, [fetchPdfs, fetchSample, checkActiveTask]);
+
+  // Polling loop for active background task
+  useEffect(() => {
+    if (!activeJob || (activeJob.status !== 'running' && activeJob.status !== 'pending')) {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const job = await getJobStatus(activeJob.task_id);
+        setActiveJob(job);
+
+        if (job.status === 'completed') {
+          setIsParsing(false);
+          if (job.result) {
+            setEtlData(job.result);
+            setSelectedSectionId(null);
+            showToast(
+              `🎉 백그라운드 ETL 완료! (소요: ${job.elapsed_time || 0}초, 청크: ${job.result.stats.total_child_chunks}개)`
+            );
+          }
+          clearInterval(intervalId);
+        } else if (job.status === 'failed') {
+          setIsParsing(false);
+          showToast(`❌ 태스크 실패: ${job.error || '파싱 중 오류 발생'}`, true);
+          clearInterval(intervalId);
+        }
+      } catch (err: any) {
+        console.error('Job polling error:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [activeJob?.task_id, activeJob?.status]);
 
   // 2. Select PDF Handler
   const handleSelectPdf = async (filename: string) => {
     setSelectedPdf(filename);
+    if (isLegalDoc(filename)) {
+      setStrategy('legal');
+    }
     const item = pdfList.find((p) => p.filename === filename);
     if (item) {
       setEndPage(Math.max(0, item.total_pages - 1));
@@ -97,6 +167,9 @@ export function App() {
       showToast(`PDF 업로드 성공: ${res.filename} (${res.total_pages}p)`);
       await fetchPdfs();
       setSelectedPdf(res.filename);
+      if (isLegalDoc(res.filename)) {
+        setStrategy('legal');
+      }
       setEndPage(Math.max(0, res.total_pages - 1));
     } catch (err: any) {
       showToast(err.message || '업로드 실패', true);
@@ -105,7 +178,7 @@ export function App() {
     }
   };
 
-  // 4. Run ETL Pipeline Handler
+  // 4. Run ETL Pipeline via Asynchronous Background Task
   const handleRunEtl = async () => {
     if (!selectedPdf) {
       showToast('파싱할 PDF 문서를 선택해주세요.', true);
@@ -114,23 +187,30 @@ export function App() {
 
     setIsParsing(true);
     try {
-      const result = await runEtlParse({
+      const res = await startEtlJob({
         filename: selectedPdf,
         all_pages: allPages,
         start_page: allPages ? null : startPage,
         end_page: allPages ? null : endPage,
         backend: engine,
+        method: method,
+        formula: formula,
+        strategy: strategy,
         lang: 'korean',
       });
-      setEtlData(result);
-      setSelectedSectionId(null);
-      showToast(
-        `파싱 및 계층 청킹 완료! (소요: ${result.elapsed_time || 0}초, 청크: ${result.stats.total_child_chunks}개)`
-      );
+
+      setActiveJob({
+        task_id: res.task_id,
+        status: 'running',
+        progress_msg: '백그라운드 파싱 대기열 등록됨...',
+        elapsed_time: 0,
+        filename: selectedPdf,
+      });
+
+      showToast(`🚀 백그라운드 태스크 등록 완료! (ID: ${res.task_id})`);
     } catch (err: any) {
-      showToast(err.message || 'ETL 실행 실패', true);
-    } finally {
       setIsParsing(false);
+      showToast(err.message || '태스크 등록 실패', true);
     }
   };
 
@@ -163,6 +243,12 @@ export function App() {
           isUploading={isUploading}
           engine={engine}
           setEngine={setEngine}
+          method={method}
+          setMethod={setMethod}
+          formula={formula}
+          setFormula={setFormula}
+          strategy={strategy}
+          setStrategy={setStrategy}
           allPages={allPages}
           setAllPages={setAllPages}
           startPage={startPage}
@@ -171,6 +257,7 @@ export function App() {
           setEndPage={setEndPage}
           onRunEtl={handleRunEtl}
           isParsing={isParsing}
+          activeJob={activeJob}
         />
 
         {/* Statistics Scoreboard */}

@@ -20,7 +20,7 @@ export interface ParentSection {
 export interface ChildChunk {
   chunk_id: string;
   parent_id: string;
-  chunk_type: 'paragraph' | 'table';
+  chunk_type: 'paragraph' | 'table' | 'article';
   text: string;
   page_number: number;
   bbox?: number[];
@@ -40,12 +40,14 @@ export interface EtlStats {
   total_child_chunks: number;
   paragraph_chunks: number;
   table_chunks: number;
+  article_chunks?: number;
   total_words: number;
 }
 
 export interface EtlResult {
   doc_id: string;
   doc_title: string;
+  strategy?: 'general' | 'legal' | string;
   stats: EtlStats;
   parent_sections: ParentSection[];
   child_chunks: ChildChunk[];
@@ -61,4 +63,19 @@ export interface ParseRequestParams {
   end_page?: number | null;
   lang?: string;
   backend?: string;
+  method?: string;
+  formula?: boolean;
+  strategy?: 'general' | 'legal' | string;
+}
+
+export interface JobStatusResponse {
+  task_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress_msg?: string;
+  elapsed_time?: number;
+  filename?: string;
+  strategy?: string;
+  result?: EtlResult;
+  error?: string;
+  active?: boolean;
 }

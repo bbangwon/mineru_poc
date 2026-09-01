@@ -16,6 +16,28 @@ class MineruService:
         else:
             self.venv_bin = venv_bin
         self.mineru_cmd = str(self.venv_bin / "mineru")
+        self._ensure_patched()
+
+    def _ensure_patched(self):
+        """MinerU CLI 고부하 시 소켓 단절(httpx.TransportError/ReadError) 자동 재시도 패치 점검 및 적용"""
+        try:
+            site_packages = list(self.venv_bin.parent.glob("lib/python*/site-packages/mineru/cli/api_client.py"))
+            if not site_packages:
+                return
+            target_file = site_packages[0]
+            with open(target_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if "except httpx.ReadTimeout:" in content and "except httpx.TransportError" not in content:
+                patched = content.replace(
+                    "except httpx.ReadTimeout:",
+                    "except httpx.TransportError as exc:"
+                )
+                with open(target_file, "w", encoding="utf-8") as f:
+                    f.write(patched)
+                logger.info(f"Successfully applied transient network error patch to {target_file}")
+        except Exception as e:
+            logger.warning(f"Could not auto-patch mineru api_client: {e}")
 
     def parse_pdf(
         self,
@@ -26,6 +48,7 @@ class MineruService:
         lang: str = "korean",
         backend: str = "pipeline",
         method: str = "auto",
+        formula: bool = True,
     ) -> Dict[str, Any]:
         output_dir.mkdir(parents=True, exist_ok=True)
         pdf_name = pdf_path.stem
@@ -37,6 +60,7 @@ class MineruService:
             "-b", backend,
             "-m", method,
             "-l", lang,
+            "-f", str(formula),
         ]
 
         if start_page is not None:

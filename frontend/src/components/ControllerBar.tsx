@@ -10,6 +10,12 @@ interface ControllerBarProps {
   isUploading: boolean;
   engine: string;
   setEngine: (engine: string) => void;
+  method: string;
+  setMethod: (method: string) => void;
+  formula: boolean;
+  setFormula: (formula: boolean) => void;
+  strategy: string;
+  setStrategy: (strategy: string) => void;
   allPages: boolean;
   setAllPages: (all: boolean) => void;
   startPage: number;
@@ -18,6 +24,7 @@ interface ControllerBarProps {
   setEndPage: (p: number) => void;
   onRunEtl: () => void;
   isParsing: boolean;
+  activeJob?: import('../types').JobStatusResponse | null;
 }
 
 export const ControllerBar: React.FC<ControllerBarProps> = ({
@@ -28,6 +35,12 @@ export const ControllerBar: React.FC<ControllerBarProps> = ({
   isUploading,
   engine,
   setEngine,
+  method,
+  setMethod,
+  formula,
+  setFormula,
+  strategy,
+  setStrategy,
   allPages,
   setAllPages,
   startPage,
@@ -36,6 +49,7 @@ export const ControllerBar: React.FC<ControllerBarProps> = ({
   setEndPage,
   onRunEtl,
   isParsing,
+  activeJob,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentItem = pdfList.find((p) => p.filename === selectedPdf);
@@ -121,10 +135,61 @@ export const ControllerBar: React.FC<ControllerBarProps> = ({
               onChange={(e) => setEngine(e.target.value)}
               className="text-xs bg-slate-50 border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             >
-              <option value="pipeline">Pipeline (한국어 최적화)</option>
+              <option value="pipeline">Pipeline (기본)</option>
               <option value="hybrid-engine">Hybrid-Engine (VLM 레이아웃)</option>
             </select>
           </div>
+
+          {/* Method Select (Auto / OCR / Txt) */}
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="font-medium text-slate-500">추출 방식:</span>
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              className={`text-xs border rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium ${
+                method === 'ocr'
+                  ? 'bg-amber-50 border-amber-300 text-amber-900 font-semibold'
+                  : 'bg-slate-50 border-slate-300 text-slate-700'
+              }`}
+              title="CMap 결함으로 숫자나 괄호가 누락될 경우 'OCR' 모드를 선택하세요"
+            >
+              <option value="auto">Auto (자동 판별)</option>
+              <option value="ocr">OCR (강제 OCR - 숫자/괄호 보존)</option>
+              <option value="txt">Txt (디지털 텍스트 직접 추출)</option>
+            </select>
+          </div>
+
+          {/* Chunking Strategy Select */}
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="font-medium text-slate-500">청킹 전략:</span>
+            <select
+              value={strategy}
+              onChange={(e) => setStrategy(e.target.value)}
+              className={`text-xs border rounded px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold ${
+                strategy === 'legal'
+                  ? 'bg-purple-50 border-purple-300 text-purple-900 shadow-xs'
+                  : 'bg-slate-50 border-slate-300 text-slate-700'
+              }`}
+              title="법률, 규정, 지침 문서는 '법률/규정(장·조·항 완결형)'을 선택하세요"
+            >
+              <option value="general">일반 문서 (헤딩 레벨 기반)</option>
+              <option value="legal">⚖️ 법률/규정 (장·조·항 완결형)</option>
+            </select>
+          </div>
+
+          {/* Formula Parsing Toggle */}
+          <label
+            className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded border border-slate-200 transition"
+            title="수학/과학 논문이 아닌 일반 문서의 경우 끄면 괄호와 숫자의 수식 오인식을 방지할 수 있습니다"
+          >
+            <input
+              type="checkbox"
+              checked={formula}
+              onChange={(e) => setFormula(e.target.checked)}
+              className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+            />
+            <span>수식(LaTeX) 파싱</span>
+          </label>
 
           {/* All Pages Toggle */}
           <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200 transition">
@@ -168,20 +233,44 @@ export const ControllerBar: React.FC<ControllerBarProps> = ({
           </div>
         </div>
 
-        {/* Run Button */}
-        <button
-          type="button"
-          disabled={isParsing || !selectedPdf}
-          onClick={onRunEtl}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isParsing ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Zap className="w-4 h-4" />
+        {/* Run Button & Background Job Indicator */}
+        <div className="flex items-center gap-3">
+          {activeJob && activeJob.status === 'running' && (
+            <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs">
+              <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+              <div className="flex flex-col">
+                <span className="font-semibold text-indigo-900">
+                  {activeJob.progress_msg || '백그라운드 처리 중...'}
+                </span>
+                <span className="text-[10px] text-indigo-600 font-mono">
+                  태스크 ID: {activeJob.task_id} ({activeJob.elapsed_time || 0}초 경과)
+                </span>
+              </div>
+            </div>
           )}
-          <span>{isParsing ? '파싱 및 계층 청킹 중...' : 'ETL 실행 & 계층 청킹'}</span>
-        </button>
+
+          <button
+            type="button"
+            disabled={isParsing || !selectedPdf}
+            onClick={onRunEtl}
+            className={`text-xs font-semibold px-4 py-2 rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isParsing
+                ? 'bg-amber-600 hover:bg-amber-700 text-white animate-pulse'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
+          >
+            {isParsing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Zap className="w-4 h-4" />
+            )}
+            <span>
+              {isParsing
+                ? `태스크 실행 중 (${activeJob?.elapsed_time || 0}초)...`
+                : 'ETL 백그라운드 태스크 등록'}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

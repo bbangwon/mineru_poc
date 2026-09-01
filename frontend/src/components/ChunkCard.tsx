@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink } from 'lucide-react';
+import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 
 interface ChunkCardProps {
@@ -14,6 +14,7 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
   onOpenJsonlModal,
 }) => {
   const isTable = chunk.chunk_type === 'table';
+  const isArticle = chunk.chunk_type === 'article';
   const breadcrumbs = chunk.breadcrumbs || [];
 
   return (
@@ -21,6 +22,8 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
       className={`p-4 rounded-xl border shadow-xs transition bg-white ${
         isTable
           ? 'border-indigo-300 ring-1 ring-indigo-200/60'
+          : isArticle
+          ? 'border-purple-300 ring-1 ring-purple-200/60'
           : 'border-slate-200 hover:border-slate-300'
       }`}
     >
@@ -31,6 +34,11 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             <span className="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded shadow-xs flex items-center gap-1">
               <Table2 className="w-3.5 h-3.5" />
               ATOMIC TABLE (원형 보존)
+            </span>
+          ) : isArticle ? (
+            <span className="bg-purple-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded shadow-xs flex items-center gap-1">
+              <Scale className="w-3.5 h-3.5" />
+              {chunk.metadata?.article_no ? `${chunk.metadata.article_no} 조문 완결 청크` : '조문 완결 청크'}
             </span>
           ) : (
             <span className="bg-slate-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded flex items-center gap-1">
