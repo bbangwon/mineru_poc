@@ -1,4 +1,4 @@
-import { Download, Cpu, Save, RotateCcw, Loader2, LayoutDashboard, SlidersHorizontal, FileText } from 'lucide-react';
+import { Download, Cpu, Save, RotateCcw, Loader2, LayoutDashboard, SlidersHorizontal, FileText, ListOrdered } from 'lucide-react';
 import type { ActiveTab } from './SidebarNav';
 
 interface HeaderProps {
@@ -10,6 +10,7 @@ interface HeaderProps {
   isResetting?: boolean;
   onSave?: () => void;
   onReset?: () => void;
+  onReindex?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   isResetting = false,
   onSave,
   onReset,
+  onReindex,
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
@@ -60,6 +62,20 @@ export const Header: React.FC<HeaderProps> = ({
             <Cpu className="w-3.5 h-3.5 mr-1" />
             Apple Silicon Metal
           </span>
+
+          {/* Reindex IDs Button */}
+          {hasData && onReindex && (
+            <button
+              type="button"
+              onClick={onReindex}
+              disabled={isResetting || isSaving}
+              className="text-xs font-medium px-3 py-2 rounded-lg transition border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-2xs"
+              title="전체 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬"
+            >
+              <ListOrdered className="w-3.5 h-3.5 text-indigo-600" />
+              <span>ID 재정렬</span>
+            </button>
+          )}
 
           {/* Reset to Original Button */}
           {hasData && onReset && (

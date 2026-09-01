@@ -124,3 +124,17 @@ export async function resetEtlResult(strategy: string = 'general'): Promise<EtlR
   }
   return res.json();
 }
+
+export async function reindexEtlResult(data?: EtlResult): Promise<EtlResult> {
+  const res = await fetch('/api/etl/reindex', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: data ? JSON.stringify(data) : JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'ID 재정렬에 실패했습니다.');
+  }
+  return res.json();
+}

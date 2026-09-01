@@ -120,7 +120,7 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
                 latest_content_list_path = found[0]
                 content_list = found[1]
 
-        chunker = HierarchicalChunker(doc_id=f"doc_{pdf_path.stem[:12]}")
+        chunker = HierarchicalChunker(doc_id=pdf_path.stem)
         etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem, strategy=strategy)
         etl_res["elapsed_time"] = parse_res.get("elapsed_time", round(time.time() - start_time, 1))
         etl_res["active_pdf"] = pdf_path.name
@@ -323,7 +323,7 @@ async def get_sample_etl(strategy: Optional[str] = "general"):
             print(f"Failed to load edited chunks: {e}")
 
     doc_name = file_path.parent.parent.name
-    chunker = HierarchicalChunker(doc_id=f"doc_{doc_name[:12]}")
+    chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
 
     # 표 이미지 상대 URL 보정 (/output/...)
@@ -336,6 +336,22 @@ async def get_sample_etl(strategy: Optional[str] = "general"):
 
     latest_etl_result = etl_res
     return etl_res
+
+
+@app.post("/api/etl/reindex")
+async def reindex_etl_endpoint(req: Optional[Dict[str, Any]] = None):
+    """
+    현재 편집 중인 ETL 결과(또는 메모리의 latest_etl_result)의
+    모든 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬합니다.
+    """
+    global latest_etl_result
+    etl_data = (req.get("etl_result") if req else None) or req or latest_etl_result
+    if not etl_data or "child_chunks" not in etl_data:
+        raise HTTPException(status_code=400, detail="재정렬할 유효한 ETL 결과 데이터가 없습니다.")
+
+    reindexed = HierarchicalChunker.reindex_etl_result(etl_data)
+    latest_etl_result = reindexed
+    return reindexed
 
 
 class SaveEtlRequest(BaseModel):
@@ -414,7 +430,7 @@ async def reset_etl_result(req: Optional[ResetRequest] = None):
 
     strat = (req.strategy if req and req.strategy else None) or "general"
     doc_name = target_content_list_path.parent.parent.name
-    chunker = HierarchicalChunker(doc_id=f"doc_{doc_name[:12]}")
+    chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strat)
 
     # 표 이미지 상대 URL 보정
@@ -480,7 +496,7 @@ async def run_etl_parse(req: ParseRequest):
             content_list = found[1]
 
     chunk_strat = req.strategy or "general"
-    chunker = HierarchicalChunker(doc_id=f"doc_{pdf_path.stem[:12]}")
+    chunker = HierarchicalChunker(doc_id=pdf_path.stem)
     etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem, strategy=chunk_strat)
     etl_res["elapsed_time"] = parse_res.get("elapsed_time", 0)
     etl_res["active_pdf"] = pdf_path.name

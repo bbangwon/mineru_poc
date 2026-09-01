@@ -1,6 +1,7 @@
 import re
 import uuid
 import json
+import hashlib
 from typing import List, Dict, Any, Optional
 
 class HierarchicalChunker:
@@ -20,8 +21,19 @@ class HierarchicalChunker:
     RE_ARTICLE = re.compile(r'^\s*(제\s*\d+\s*조(?:의\s*\d+)?)(?:\s*\(([^)]+)\))?')
     RE_APPENDIX = re.compile(r'^\s*(\[(?:별표|별지)(?:\s*제?\d+호?(?:의\d+)?)?\]|\b별표\s*\d+|\b별지\s*제?\d+호(?:\s*서식)?)')
 
+    @staticmethod
+    def generate_doc_id(name: Optional[str] = None) -> str:
+        """문서명을 6자리 짧은 해시 기반 고유 식별자(d_xxxxxx)로 변환"""
+        if not name:
+            return f"d_{uuid.uuid4().hex[:6]}"
+        clean = str(name).strip()
+        if clean.startswith("d_") and len(clean) <= 10 and clean[2:].isalnum():
+            return clean
+        h = hashlib.md5(clean.encode("utf-8")).hexdigest()[:6]
+        return f"d_{h}"
+
     def __init__(self, doc_id: Optional[str] = None, filter_headers_footers: bool = True):
-        self.doc_id = doc_id or "doc_" + uuid.uuid4().hex[:8]
+        self.doc_id = self.generate_doc_id(doc_id)
         self.filter_headers_footers = filter_headers_footers
 
     def chunk_content_list(self, content_list: List[Any], doc_title: str = "Document", strategy: str = "general") -> Dict[str, Any]:
@@ -106,7 +118,7 @@ class HierarchicalChunker:
         parent_sections: List[Dict[str, Any]] = []
         child_chunks: List[Dict[str, Any]] = []
 
-        root_section_id = f"{self.doc_id}_root"
+        root_section_id = f"{self.doc_id}_s00"
         current_root_section = {
             "id": root_section_id,
             "title": doc_title,
@@ -141,7 +153,7 @@ class HierarchicalChunker:
 
                     level = b_content.get("level", 1)
                     section_counter += 1
-                    sec_id = f"{self.doc_id}_sec_{section_counter:03d}"
+                    sec_id = f"{self.doc_id}_s{section_counter:02d}"
 
                     while heading_stack and heading_stack[-1][0] >= level:
                         heading_stack.pop()
@@ -175,7 +187,7 @@ class HierarchicalChunker:
                         continue
 
                     chunk_counter += 1
-                    chunk_id = f"{self.doc_id}_c_{chunk_counter:04d}"
+                    chunk_id = f"{self.doc_id}_c{chunk_counter:03d}"
                     current_sec_id = heading_stack[-1][2] if heading_stack else root_section_id
                     current_breadcrumbs = [h[1] for h in heading_stack]
 
@@ -185,7 +197,6 @@ class HierarchicalChunker:
                         "chunk_type": "paragraph",
                         "text": para_text.strip(),
                         "page_number": page_idx,
-                        "bbox": b_bbox,
                         "breadcrumbs": current_breadcrumbs,
                         "token_estimate": len(para_text.split()),
                         "metadata": {
@@ -205,7 +216,7 @@ class HierarchicalChunker:
                     table_type = b_content.get("table_type", "simple_table")
 
                     chunk_counter += 1
-                    chunk_id = f"{self.doc_id}_table_{chunk_counter:04d}"
+                    chunk_id = f"{self.doc_id}_c{chunk_counter:03d}"
                     current_sec_id = heading_stack[-1][2] if heading_stack else root_section_id
                     current_breadcrumbs = [h[1] for h in heading_stack]
 
@@ -229,7 +240,6 @@ class HierarchicalChunker:
                         "image_path": img_path,
                         "table_type": table_type,
                         "page_number": page_idx,
-                        "bbox": b_bbox,
                         "breadcrumbs": current_breadcrumbs,
                         "token_estimate": len(full_table_str.split()),
                         "metadata": {
@@ -276,7 +286,7 @@ class HierarchicalChunker:
         parent_sections: List[Dict[str, Any]] = []
         child_chunks: List[Dict[str, Any]] = []
 
-        root_section_id = f"{self.doc_id}_root"
+        root_section_id = f"{self.doc_id}_s00"
         current_root_section = {
             "id": root_section_id,
             "title": doc_title,
@@ -305,7 +315,7 @@ class HierarchicalChunker:
                 return
 
             chunk_counter += 1
-            chunk_id = f"{self.doc_id}_art_{chunk_counter:04d}"
+            chunk_id = f"{self.doc_id}_c{chunk_counter:03d}"
 
             context_header = f"[{' > '.join(current_article['breadcrumbs'])}]"
             full_chunk_text = f"{context_header}\n{article_text}"
@@ -316,7 +326,6 @@ class HierarchicalChunker:
                 "chunk_type": "article",
                 "text": full_chunk_text,
                 "page_number": current_article["page_number"],
-                "bbox": current_article.get("bbox", []),
                 "breadcrumbs": current_article["breadcrumbs"] + [current_article["article_display"]],
                 "token_estimate": len(full_chunk_text.split()),
                 "metadata": {
@@ -375,7 +384,7 @@ class HierarchicalChunker:
                     table_type = b_content.get("table_type", "simple_table")
 
                     chunk_counter += 1
-                    chunk_id = f"{self.doc_id}_table_{chunk_counter:04d}"
+                    chunk_id = f"{self.doc_id}_c{chunk_counter:03d}"
 
                     current_sec_id = (
                         current_article["section_id"]
@@ -404,7 +413,6 @@ class HierarchicalChunker:
                         "image_path": img_path,
                         "table_type": table_type,
                         "page_number": page_idx,
-                        "bbox": b_bbox,
                         "breadcrumbs": current_breadcrumbs,
                         "token_estimate": len(full_table_str.split()),
                         "metadata": {
@@ -464,7 +472,7 @@ class HierarchicalChunker:
                     commit_current_article()
 
                     section_counter += 1
-                    sec_id = f"{self.doc_id}_sec_{section_counter:03d}"
+                    sec_id = f"{self.doc_id}_s{section_counter:02d}"
 
                     while hierarchy_stack and hierarchy_stack[-1][0] >= level:
                         hierarchy_stack.pop()
@@ -497,7 +505,7 @@ class HierarchicalChunker:
                     art_display = f"{art_label}({art_title})" if art_title else art_label
 
                     section_counter += 1
-                    sec_id = f"{self.doc_id}_artsec_{section_counter:03d}"
+                    sec_id = f"{self.doc_id}_s{section_counter:02d}"
 
                     while hierarchy_stack and hierarchy_stack[-1][0] >= 5:
                         hierarchy_stack.pop()
@@ -537,7 +545,7 @@ class HierarchicalChunker:
                     current_article["page_number"] = page_idx
                 else:
                     chunk_counter += 1
-                    chunk_id = f"{self.doc_id}_c_{chunk_counter:04d}"
+                    chunk_id = f"{self.doc_id}_c{chunk_counter:03d}"
                     current_sec_id = hierarchy_stack[-1][2] if hierarchy_stack else root_section_id
                     current_breadcrumbs = [h[1] for h in hierarchy_stack]
 
@@ -547,7 +555,6 @@ class HierarchicalChunker:
                         "chunk_type": "paragraph",
                         "text": clean_text,
                         "page_number": page_idx,
-                        "bbox": b_bbox,
                         "breadcrumbs": current_breadcrumbs,
                         "token_estimate": len(clean_text.split()),
                         "metadata": {
@@ -599,7 +606,6 @@ class HierarchicalChunker:
                 "page": chunk.get("page_number", 1),
                 "breadcrumbs": breadcrumbs,
                 "breadcrumbs_str": " > ".join(breadcrumbs),
-                "bbox": chunk.get("bbox", []),
                 "metadata": {
                     **(chunk.get("metadata") or {}),
                     "parent_breadcrumbs": breadcrumbs,
@@ -614,6 +620,73 @@ class HierarchicalChunker:
             lines.append(json.dumps(record, ensure_ascii=False))
 
         return "\n".join(lines)
+
+    @classmethod
+    def reindex_etl_result(cls, etl_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        사용자가 분할, 병합, 편집한 ETL 결과 전체의 ID를 문서 순서대로 정규화/재정렬(Re-index)합니다.
+        - doc_id: 6자리 해시 기반 정규화 (d_xxxxxx)
+        - parent_sections: s00 (root), s01, s02...
+        - child_chunks: c001, c002, c003...
+        - 모든 부모-자식 양방향 참조(parent_section_id, child_chunk_ids, parent_id) 일괄 치환
+        """
+        import copy
+        res = copy.deepcopy(etl_result)
+        raw_doc_id = res.get("doc_id") or "doc"
+        doc_id = cls.generate_doc_id(raw_doc_id)
+        res["doc_id"] = doc_id
+
+        # 1. 섹션 ID 매핑
+        section_id_map: Dict[str, str] = {}
+        sec_counter = 1
+        new_sections = []
+        for sec in res.get("parent_sections", []):
+            old_id = sec.get("id", "")
+            if sec.get("level", 0) == 0 or old_id.endswith("_root") or old_id.endswith("_s00"):
+                new_sec_id = f"{doc_id}_s00"
+            else:
+                new_sec_id = f"{doc_id}_s{sec_counter:02d}"
+                sec_counter += 1
+            section_id_map[old_id] = new_sec_id
+            sec["id"] = new_sec_id
+            new_sections.append(sec)
+
+        # 2. 청크 ID 매핑
+        chunk_id_map: Dict[str, str] = {}
+        chunk_counter = 1
+        new_chunks = []
+        for chunk in res.get("child_chunks", []):
+            old_c_id = chunk.get("chunk_id", "")
+            new_c_id = f"{doc_id}_c{chunk_counter:03d}"
+            chunk_counter += 1
+            chunk_id_map[old_c_id] = new_c_id
+
+            chunk["chunk_id"] = new_c_id
+            if "metadata" not in chunk or not isinstance(chunk["metadata"], dict):
+                chunk["metadata"] = {}
+            if "original_chunk_id" not in chunk["metadata"]:
+                chunk["metadata"]["original_chunk_id"] = old_c_id
+            new_chunks.append(chunk)
+
+        # 3. 섹션 내 부모 섹션 및 자식 청크 참조 일괄 갱신
+        for sec in new_sections:
+            old_parent_sec_id = sec.get("parent_section_id")
+            if old_parent_sec_id and old_parent_sec_id in section_id_map:
+                sec["parent_section_id"] = section_id_map[old_parent_sec_id]
+
+            sec["child_chunk_ids"] = [
+                chunk_id_map[cid] for cid in sec.get("child_chunk_ids", []) if cid in chunk_id_map
+            ]
+
+        # 4. 청크 내 부모 섹션 참조 일괄 갱신
+        for chunk in new_chunks:
+            old_pid = chunk.get("parent_id")
+            if old_pid and old_pid in section_id_map:
+                chunk["parent_id"] = section_id_map[old_pid]
+
+        res["parent_sections"] = new_sections
+        res["child_chunks"] = new_chunks
+        return res
 
     def _extract_text_from_content(self, content_items: Any) -> str:
         if isinstance(content_items, str):

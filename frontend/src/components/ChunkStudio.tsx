@@ -29,6 +29,7 @@ import {
   Square,
   CheckSquare,
   Trash2,
+  ListOrdered,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
@@ -54,6 +55,7 @@ interface ChunkStudioProps {
   onSplitChunk?: (chunkId: string, part1Text: string, part2Text: string) => void;
   onMergeChunks?: (chunkIds: string[], mergedText: string, customMergedId?: string) => void;
   onBatchCleanEmptyChunks?: () => void;
+  onReindexIds?: () => void;
   isLoading: boolean;
 }
 
@@ -72,6 +74,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onSplitChunk,
   onMergeChunks,
   onBatchCleanEmptyChunks,
+  onReindexIds,
   isLoading,
 }) => {
   // 1. Column 1 State (Hierarchy Tree)
@@ -763,6 +766,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     <span className="font-mono text-[9px] px-1 rounded bg-rose-200 text-rose-900">
                       {linterStats.emptyCount}
                     </span>
+                  </button>
+                )}
+
+                {onReindexIds && (
+                  <button
+                    type="button"
+                    onClick={onReindexIds}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 font-medium transition cursor-pointer flex items-center gap-1 ml-auto"
+                    title="전체 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬"
+                  >
+                    <ListOrdered className="w-2.5 h-2.5 text-indigo-600" />
+                    <span>ID 재정렬</span>
                   </button>
                 )}
               </div>

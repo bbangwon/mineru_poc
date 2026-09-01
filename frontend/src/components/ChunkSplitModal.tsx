@@ -102,8 +102,8 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
   const isPart2Valid = part2.trim().length > 0;
   const canSplit = isPart1Valid && isPart2Valid;
 
-  const chunkId1 = `${chunk.chunk_id}_split1`;
-  const chunkId2 = `${chunk.chunk_id}_split2`;
+  const chunkId1 = chunk.chunk_id;
+  const chunkId2 = `${chunk.chunk_id} + 신규 번호`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,7 +132,7 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                토큰 한도를 초과하거나 긴 청크를 2개의 독립 청크({chunkId1}, {chunkId2})로 분리합니다.
+                토큰 한도를 초과하거나 긴 청크를 2개의 독립 청크로 분리합니다. (청크 1: 기존 ID 유지, 청크 2: 다음 순번 채번)
               </p>
             </div>
           </div>

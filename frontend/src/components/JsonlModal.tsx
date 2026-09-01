@@ -28,7 +28,6 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
     page: chunk.page_number,
     breadcrumbs: chunk.breadcrumbs,
     breadcrumbs_str: (chunk.breadcrumbs || []).join(' > '),
-    bbox: chunk.bbox,
     metadata: {
       ...(chunk.metadata || {}),
       parent_breadcrumbs: chunk.breadcrumbs,

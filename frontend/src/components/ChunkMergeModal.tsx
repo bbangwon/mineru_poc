@@ -43,7 +43,7 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
   }, [parentSections]);
 
   const firstChunk = selectedChunks[0];
-  const defaultMergedId = firstChunk ? `${firstChunk.chunk_id}_merged` : '';
+  const defaultMergedId = firstChunk ? firstChunk.chunk_id : '';
 
   // Generate combined text when separator or selection changes
   useEffect(() => {

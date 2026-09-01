@@ -20,6 +20,7 @@ import {
   saveEtlResult,
   resetEtlResult,
 } from './api/client';
+import { getNextChunkId, reindexEtlData } from './utils/idUtils';
 import type { PdfItem, EtlResult, ChildChunk, ParentSection, JobStatusResponse } from './types';
 
 export function App() {
@@ -503,15 +504,9 @@ export function App() {
     if (targetIndex === -1) return;
     const target = etlData.child_chunks[targetIndex];
 
-    let baseId = targetChunkId;
-    let id1 = `${baseId}_split1`;
-    let id2 = `${baseId}_split2`;
-    let counter = 1;
-    while (etlData.child_chunks.some((c) => c.chunk_id === id1 || c.chunk_id === id2)) {
-      counter++;
-      id1 = `${baseId}_s${counter}_1`;
-      id2 = `${baseId}_s${counter}_2`;
-    }
+    // 청크 1은 기존 ID 유지, 청크 2는 다음 시퀀스 번호(c043 등) 채번하여 ID 길이 팽창 방지
+    const id1 = targetChunkId;
+    const id2 = getNextChunkId(etlData.child_chunks, etlData.doc_id);
 
     const words1 = part1Text.trim() ? part1Text.trim().split(/\s+/).length : 0;
     const words2 = part2Text.trim() ? part2Text.trim().split(/\s+/).length : 0;
@@ -528,7 +523,7 @@ export function App() {
       chunk_id: id1,
       text: part1Text,
       token_estimate: words1,
-      metadata: cleanMetadata ? { ...cleanMetadata } : undefined,
+      metadata: cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 1 } : { split_from: targetChunkId, split_part: 1 },
       is_edited: true,
     };
 
@@ -537,7 +532,7 @@ export function App() {
       chunk_id: id2,
       text: part2Text,
       token_estimate: words2,
-      metadata: cleanMetadata ? { ...cleanMetadata } : undefined,
+      metadata: cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 2 } : { split_from: targetChunkId, split_part: 2 },
       is_edited: true,
     };
 
@@ -597,15 +592,14 @@ export function App() {
 
     const firstChunk = selectedChunks[0];
 
-    let mergedId = customMergedId?.trim() || `${firstChunk.chunk_id}_merged`;
-    let counter = 1;
-    while (
+    // 병합 시 첫 번째 청크의 ID를 승계하여 접미사(_merged) 팽창 방지
+    let mergedId = customMergedId?.trim() || firstChunk.chunk_id;
+    if (
       etlData.child_chunks.some(
         (c) => c.chunk_id === mergedId && !chunkIds.includes(c.chunk_id)
       )
     ) {
-      counter++;
-      mergedId = `${firstChunk.chunk_id}_merged${counter}`;
+      mergedId = getNextChunkId(etlData.child_chunks, etlData.doc_id);
     }
 
     const words = mergedText.trim() ? mergedText.trim().split(/\s+/).length : 0;
@@ -624,7 +618,12 @@ export function App() {
       text: mergedText,
       token_estimate: words,
       page_number: minPage,
-      metadata: cleanMetadata,
+      metadata: {
+        ...(cleanMetadata || {}),
+        is_merged: true,
+        merged_from: chunkIds,
+        merged_count: chunkIds.length,
+      },
       is_edited: true,
       is_ignored: false,
     };
@@ -727,7 +726,21 @@ export function App() {
     showToast(`🧹 ${emptyChunks.length}개의 빈 청크를 임베딩 제외 처리했습니다.`);
   };
 
-  // 11. Save ETL Result to Backend & Disk
+  // 11. Re-index All IDs Handler (ID 일괄 정규화 및 재정렬)
+  const handleReindexIds = () => {
+    if (!etlData) return;
+    const confirmed = window.confirm(
+      `전체 섹션과 청크의 ID를 문서 순서대로 정규화(s01~, c001~)하여 재정렬하시겠습니까?\n(총 ${etlData.parent_sections.length}개 섹션, ${etlData.child_chunks.length}개 청크)\n\n※ 분할/병합 후 불연속해진 번호가 깨끗하게 1번부터 순차적으로 정돈됩니다.`
+    );
+    if (!confirmed) return;
+
+    const reindexed = reindexEtlData(etlData);
+    setEtlData(reindexed);
+    setIsDirty(true);
+    showToast('전체 섹션과 청크 ID가 순서대로 성공적으로 재정렬되었습니다. 변경 사항을 저장하려면 [수정본 저장]을 클릭하세요.');
+  };
+
+  // 12. Save ETL Result to Backend & Disk
   const handleSaveEtl = async () => {
     if (!etlData) return;
     setIsSaving(true);
@@ -805,6 +818,7 @@ export function App() {
           isResetting={isResetting}
           onSave={handleSaveEtl}
           onReset={handleResetEtl}
+          onReindex={handleReindexIds}
         />
 
         {activeTab === 'dashboard' ? (
@@ -885,6 +899,7 @@ export function App() {
               onSplitChunk={handleSplitChunk}
               onMergeChunks={handleMergeChunks}
               onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
+              onReindexIds={handleReindexIds}
               isLoading={isLoadingEtl}
             />
           </div>
