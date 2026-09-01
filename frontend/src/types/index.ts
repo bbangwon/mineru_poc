@@ -33,6 +33,15 @@ export interface ChildChunk {
   image_url?: string;
   table_type?: string;
   metadata?: Record<string, any>;
+  is_edited?: boolean;
+  is_ignored?: boolean;
+}
+
+export interface SaveEtlResponse {
+  success: boolean;
+  message: string;
+  saved_at: number;
+  total_chunks: number;
 }
 
 export interface EtlStats {

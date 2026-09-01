@@ -586,6 +586,8 @@ class HierarchicalChunker:
         parent_map = {p["id"]: p for p in etl_result.get("parent_sections", [])}
 
         for chunk in etl_result.get("child_chunks", []):
+            if chunk.get("is_ignored"):
+                continue
             parent = parent_map.get(chunk["parent_id"], {})
             record = {
                 "id": chunk["chunk_id"],

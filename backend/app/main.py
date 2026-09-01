@@ -49,6 +49,7 @@ mineru_svc = MineruService()
 
 # Cache latest ETL result & current active PDF in memory
 latest_etl_result: Optional[dict] = None
+latest_content_list_path: Optional[Path] = None
 current_selected_pdf_name: Optional[str] = None
 
 # In-memory background jobs registry
@@ -69,7 +70,7 @@ class ParseRequest(BaseModel):
 
 def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
     """백그라운드에서 실행되는 MinerU 파싱 및 계층 청킹 워커"""
-    global latest_etl_result, current_selected_pdf_name
+    global latest_etl_result, latest_content_list_path, current_selected_pdf_name
     pdf_path = Path(pdf_path_str)
     job = jobs_db.get(task_id)
     if not job:
@@ -111,9 +112,12 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
         job["progress_msg"] = "문서 위계 구조 및 법률 조문 계층 청킹 중..."
 
         content_list = parse_res.get("content_list", [])
-        if not content_list:
-            found = find_latest_content_list()
+        if parse_res.get("content_list_path"):
+            latest_content_list_path = Path(parse_res["content_list_path"])
+        elif not content_list:
+            found = find_latest_content_list(pdf_path.stem)
             if found:
+                latest_content_list_path = found[0]
                 content_list = found[1]
 
         chunker = HierarchicalChunker(doc_id=f"doc_{pdf_path.stem[:12]}")
@@ -171,8 +175,8 @@ def get_active_pdf_path() -> Optional[Path]:
     return None
 
 
-def find_latest_content_list() -> Optional[tuple[Path, list]]:
-    """가장 최근에 생성된 MinerU content_list_v2.json 우선 탐색 (없으면 v1)"""
+def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Optional[tuple[Path, list]]:
+    """가장 최근에 생성된 MinerU content_list_v2.json 우선 탐색 (preferred_doc_name 우선)"""
     v2_candidates = []
     v1_candidates = []
     if OUTPUT_DIR.exists():
@@ -187,6 +191,15 @@ def find_latest_content_list() -> Optional[tuple[Path, list]]:
     candidates = v2_candidates if v2_candidates else v1_candidates
     if not candidates:
         return None
+
+    # preferred_doc_name이 주어지면 파일 경로에 포함된 것 우선 정렬
+    if preferred_doc_name:
+        stem = Path(preferred_doc_name).stem
+        preferred = [c for c in candidates if stem in str(c[1])]
+        if preferred:
+            preferred.sort(key=lambda x: x[0], reverse=True)
+            candidates = preferred
+
     candidates.sort(key=lambda x: x[0], reverse=True)
     latest_path = candidates[0][1]
     try:
@@ -289,15 +302,28 @@ async def get_favicon():
 
 @app.get("/api/etl/sample")
 async def get_sample_etl(strategy: Optional[str] = "general"):
-    """기존 파싱 결과를 바탕으로 부모-자식 청크 & 표 원형 보존 ETL 결과 반환"""
-    global latest_etl_result
-    found = find_latest_content_list()
+    """기존 파싱 결과를 바탕으로 부모-자식 청크 & 표 원형 보존 ETL 결과 반환 (수정본 존재 시 우선 로드)"""
+    global latest_etl_result, latest_content_list_path
+    found = find_latest_content_list(current_selected_pdf_name)
     if not found:
         raise HTTPException(status_code=404, detail="No MinerU parsed content found.")
 
     file_path, content_list = found
+    latest_content_list_path = file_path
+
+    # rag_chunks_edited.json 존재 시 우선 로드
+    edited_path = file_path.parent / "rag_chunks_edited.json"
+    if edited_path.exists():
+        try:
+            with open(edited_path, "r", encoding="utf-8") as f:
+                edited_data = json.load(f)
+                latest_etl_result = edited_data
+                return edited_data
+        except Exception as e:
+            print(f"Failed to load edited chunks: {e}")
+
     doc_name = file_path.parent.parent.name
-    chunker = HierarchicalChunker(doc_id="doc_asbestos")
+    chunker = HierarchicalChunker(doc_id=f"doc_{doc_name[:12]}")
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
 
     # 표 이미지 상대 URL 보정 (/output/...)
@@ -312,10 +338,101 @@ async def get_sample_etl(strategy: Optional[str] = "general"):
     return etl_res
 
 
+class SaveEtlRequest(BaseModel):
+    etl_result: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/etl/save")
+async def save_etl_result(req: Dict[str, Any]):
+    """사용자가 편집한 ETL 결과 전체를 백엔드에 영속 저장"""
+    global latest_etl_result, latest_content_list_path
+
+    etl_data = req.get("etl_result", req)
+    if not etl_data or "child_chunks" not in etl_data:
+        raise HTTPException(status_code=400, detail="유효한 ETL 결과 데이터가 아닙니다.")
+
+    target_content_list_path = latest_content_list_path
+    if not target_content_list_path or not target_content_list_path.exists():
+        found = find_latest_content_list(current_selected_pdf_name)
+        if found:
+            target_content_list_path = found[0]
+            latest_content_list_path = target_content_list_path
+
+    if not target_content_list_path:
+        raise HTTPException(status_code=404, detail="저장할 대상 파싱 결과 디렉토리를 찾을 수 없습니다.")
+
+    save_path = target_content_list_path.parent / "rag_chunks_edited.json"
+    try:
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(etl_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 실패: {str(e)}")
+
+    latest_etl_result = etl_data
+    total_chunks = len(etl_data.get("child_chunks", []))
+    saved_time = time.time()
+
+    return {
+        "success": True,
+        "message": "수정본이 성공적으로 저장되었습니다.",
+        "saved_at": saved_time,
+        "total_chunks": total_chunks,
+    }
+
+
+class ResetRequest(BaseModel):
+    strategy: Optional[str] = "general"
+
+
+@app.post("/api/etl/reset")
+async def reset_etl_result(req: Optional[ResetRequest] = None):
+    """수정본(rag_chunks_edited.json)을 제거하고 원본 파싱 결과로 리셋"""
+    global latest_etl_result, latest_content_list_path
+
+    target_content_list_path = latest_content_list_path
+    if not target_content_list_path or not target_content_list_path.exists():
+        found = find_latest_content_list(current_selected_pdf_name)
+        if found:
+            target_content_list_path = found[0]
+            latest_content_list_path = target_content_list_path
+
+    if not target_content_list_path or not target_content_list_path.exists():
+        raise HTTPException(status_code=404, detail="원본 파싱 결과를 찾을 수 없습니다.")
+
+    save_path = target_content_list_path.parent / "rag_chunks_edited.json"
+    if save_path.exists():
+        try:
+            save_path.unlink()
+        except Exception as e:
+            print(f"수정본 파일 삭제 실패: {e}")
+
+    try:
+        with open(target_content_list_path, "r", encoding="utf-8") as f:
+            content_list = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"원본 데이터 로드 실패: {str(e)}")
+
+    strat = (req.strategy if req and req.strategy else None) or "general"
+    doc_name = target_content_list_path.parent.parent.name
+    chunker = HierarchicalChunker(doc_id=f"doc_{doc_name[:12]}")
+    etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strat)
+
+    # 표 이미지 상대 URL 보정
+    for chunk in etl_res.get("child_chunks", []):
+        if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
+            img_p = target_content_list_path.parent / chunk["image_path"]
+            if img_p.exists():
+                rel_to_output = img_p.relative_to(OUTPUT_DIR)
+                chunk["image_url"] = f"/output/{rel_to_output}"
+
+    latest_etl_result = etl_res
+    return etl_res
+
+
 @app.post("/api/etl/parse")
 async def run_etl_parse(req: ParseRequest):
     """지정된 PDF(또는 활성 PDF)를 파싱하고 즉시 계층 청킹 파이프라인 수행"""
-    global latest_etl_result, current_selected_pdf_name
+    global latest_etl_result, latest_content_list_path, current_selected_pdf_name
 
     pdf_path = None
     if req.filename:
@@ -354,9 +471,12 @@ async def run_etl_parse(req: ParseRequest):
         )
 
     content_list = parse_res.get("content_list", [])
-    if not content_list:
-        found = find_latest_content_list()
+    if parse_res.get("content_list_path"):
+        latest_content_list_path = Path(parse_res["content_list_path"])
+    elif not content_list:
+        found = find_latest_content_list(pdf_path.stem)
         if found:
+            latest_content_list_path = found[0]
             content_list = found[1]
 
     chunk_strat = req.strategy or "general"

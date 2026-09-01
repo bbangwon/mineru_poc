@@ -1,35 +1,41 @@
 import React from 'react';
-import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale } from 'lucide-react';
+import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 
 interface ChunkCardProps {
   chunk: ChildChunk;
   parentSection?: ParentSection;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
+  onEditChunk?: (chunk: ChildChunk) => void;
 }
 
 export const ChunkCard: React.FC<ChunkCardProps> = ({
   chunk,
   parentSection,
   onOpenJsonlModal,
+  onEditChunk,
 }) => {
   const isTable = chunk.chunk_type === 'table';
   const isArticle = chunk.chunk_type === 'article';
+  const isIgnored = Boolean(chunk.is_ignored);
+  const isEdited = Boolean(chunk.is_edited);
   const breadcrumbs = chunk.breadcrumbs || [];
 
   return (
     <div
-      className={`p-4 rounded-xl border shadow-xs transition bg-white ${
-        isTable
-          ? 'border-indigo-300 ring-1 ring-indigo-200/60'
+      className={`p-4 rounded-xl border shadow-xs transition relative ${
+        isIgnored
+          ? 'bg-slate-50/70 border-slate-300 opacity-65'
+          : isTable
+          ? 'border-indigo-300 ring-1 ring-indigo-200/60 bg-white'
           : isArticle
-          ? 'border-purple-300 ring-1 ring-purple-200/60'
-          : 'border-slate-200 hover:border-slate-300'
+          ? 'border-purple-300 ring-1 ring-purple-200/60 bg-white'
+          : 'border-slate-200 hover:border-slate-300 bg-white'
       }`}
     >
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {isTable ? (
             <span className="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded shadow-xs flex items-center gap-1">
               <Table2 className="w-3.5 h-3.5" />
@@ -46,6 +52,23 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
               문단
             </span>
           )}
+
+          {/* Edited Status Badge */}
+          {isEdited && (
+            <span className="bg-amber-50 text-amber-700 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-amber-500" />
+              수정됨
+            </span>
+          )}
+
+          {/* Ignored Status Badge */}
+          {isIgnored && (
+            <span className="bg-rose-50 text-rose-700 border border-rose-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+              <EyeOff className="w-3 h-3 text-rose-500" />
+              임베딩 제외
+            </span>
+          )}
+
           <span className="font-mono text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
             {chunk.chunk_id}
           </span>
@@ -54,14 +77,26 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {onEditChunk && (
+            <button
+              type="button"
+              onClick={() => onEditChunk(chunk)}
+              className="text-[11px] text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded transition flex items-center gap-1 font-semibold cursor-pointer border border-indigo-200/80"
+              title="청크 내용 및 부모 섹션 수정"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>수정</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onOpenJsonlModal(chunk)}
             className="text-[11px] text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 px-2.5 py-1 rounded transition flex items-center gap-1 font-medium cursor-pointer"
           >
             <FileCode2 className="w-3.5 h-3.5" />
-            <span>JSONL 레코드</span>
+            <span>JSONL</span>
           </button>
         </div>
       </div>

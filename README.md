@@ -50,3 +50,8 @@ npm run dev
 - `GET /api/etl/export/jsonl`: RAG 표준 JSONL 다운로드
 - `GET /api/pdf`: 활성 원본 PDF 뷰
 
+---
+
+## 📚 개발 및 고도화 문서
+- [계층 구조 및 청크 편집 기능 구현 계획서](docs/CHUNK_EDITOR_IMPLEMENTATION_PLAN.md)
+

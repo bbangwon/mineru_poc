@@ -96,3 +96,31 @@ export async function getActiveJob(): Promise<import('../types').JobStatusRespon
     return null;
   }
 }
+
+export async function saveEtlResult(data: EtlResult): Promise<import('../types').SaveEtlResponse> {
+  const res = await fetch('/api/etl/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || '수정본 저장에 실패했습니다.');
+  }
+  return res.json();
+}
+
+export async function resetEtlResult(strategy: string = 'general'): Promise<EtlResult> {
+  const res = await fetch('/api/etl/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ strategy }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || '원본 데이터 초기화에 실패했습니다.');
+  }
+  return res.json();
+}

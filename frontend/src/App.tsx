@@ -5,7 +5,18 @@ import { StatCards } from './components/StatCards';
 import { HierarchyTree } from './components/HierarchyTree';
 import { ChunkExplorer } from './components/ChunkExplorer';
 import { JsonlModal } from './components/JsonlModal';
-import { getPdfList, selectPdf, uploadPdf, getEtlSample, startEtlJob, getJobStatus, getActiveJob } from './api/client';
+import { ChunkEditModal } from './components/ChunkEditModal';
+import {
+  getPdfList,
+  selectPdf,
+  uploadPdf,
+  getEtlSample,
+  startEtlJob,
+  getJobStatus,
+  getActiveJob,
+  saveEtlResult,
+  resetEtlResult,
+} from './api/client';
 import type { PdfItem, EtlResult, ChildChunk, JobStatusResponse } from './types';
 
 export function App() {
@@ -25,6 +36,12 @@ export function App() {
   const [activeJob, setActiveJob] = useState<JobStatusResponse | null>(null);
   const [isLoadingEtl, setIsLoadingEtl] = useState(true);
   const [etlData, setEtlData] = useState<EtlResult | null>(null);
+
+  // Edit and Persistence States
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [editingChunk, setEditingChunk] = useState<ChildChunk | null>(null);
 
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [activeModalChunk, setActiveModalChunk] = useState<ChildChunk | null>(null);
@@ -214,6 +231,93 @@ export function App() {
     }
   };
 
+  // 5. Update Single Chunk Handler
+  const handleUpdateChunk = (updatedChunk: ChildChunk) => {
+    if (!etlData) return;
+
+    // 1) Update child_chunks array
+    const updatedChunks = etlData.child_chunks.map((c) =>
+      c.chunk_id === updatedChunk.chunk_id ? updatedChunk : c
+    );
+
+    // 2) Synchronize parent sections if parent_id was changed
+    const oldChunk = etlData.child_chunks.find((c) => c.chunk_id === updatedChunk.chunk_id);
+    let updatedSections = [...etlData.parent_sections];
+
+    if (oldChunk && oldChunk.parent_id !== updatedChunk.parent_id) {
+      updatedSections = updatedSections.map((sec) => {
+        if (sec.id === oldChunk.parent_id) {
+          // Remove from old parent
+          return {
+            ...sec,
+            child_chunk_ids: sec.child_chunk_ids.filter((id) => id !== updatedChunk.chunk_id),
+          };
+        }
+        if (sec.id === updatedChunk.parent_id) {
+          // Add to new parent
+          return {
+            ...sec,
+            child_chunk_ids: [...sec.child_chunk_ids, updatedChunk.chunk_id],
+          };
+        }
+        return sec;
+      });
+    }
+
+    // 3) Recalculate stats
+    const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
+    const updatedStats = {
+      ...etlData.stats,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+
+    setIsDirty(true);
+    showToast(`청크(${updatedChunk.chunk_id}) 수정이 적용되었습니다. 상단의 [수정본 저장]을 눌러 파일에 저장하세요.`);
+  };
+
+  // 6. Save ETL Result to Backend & Disk
+  const handleSaveEtl = async () => {
+    if (!etlData) return;
+    setIsSaving(true);
+    try {
+      const res = await saveEtlResult(etlData);
+      setIsDirty(false);
+      showToast(`🎉 ${res.message || '수정본이 파일(rag_chunks_edited.json)에 성공적으로 저장되었습니다.'}`);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      showToast(err.message || '수정본 저장 중 오류가 발생했습니다.', true);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 7. Reset ETL Result to Original
+  const handleResetEtl = async () => {
+    const confirmed = window.confirm('모든 수정 내용을 폐기하고 원본 파싱 결과로 복원하시겠습니까?');
+    if (!confirmed) return;
+
+    setIsResetting(true);
+    try {
+      const original = await resetEtlResult(strategy);
+      setEtlData(original);
+      setIsDirty(false);
+      setSelectedSectionId(null);
+      showToast('🔄 원본 파싱 데이터로 초기화되었습니다.');
+    } catch (err: any) {
+      console.error('Reset error:', err);
+      showToast(err.message || '초기화 중 오류가 발생했습니다.', true);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return (
     <div className="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans">
       {/* Toast Notification */}
@@ -230,7 +334,14 @@ export function App() {
       )}
 
       {/* Top Navbar */}
-      <Header hasData={!!(etlData && etlData.child_chunks.length > 0)} />
+      <Header
+        hasData={!!(etlData && etlData.child_chunks.length > 0)}
+        isDirty={isDirty}
+        isSaving={isSaving}
+        isResetting={isResetting}
+        onSave={handleSaveEtl}
+        onReset={handleResetEtl}
+      />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -283,6 +394,7 @@ export function App() {
               selectedSectionId={selectedSectionId}
               onClearSectionFilter={() => setSelectedSectionId(null)}
               onOpenJsonlModal={setActiveModalChunk}
+              onEditChunk={setEditingChunk}
               isLoading={isLoadingEtl}
             />
           </div>
@@ -294,6 +406,14 @@ export function App() {
         chunk={activeModalChunk}
         parentSections={etlData?.parent_sections || []}
         onClose={() => setActiveModalChunk(null)}
+      />
+
+      {/* Chunk Edit Modal */}
+      <ChunkEditModal
+        chunk={editingChunk}
+        parentSections={etlData?.parent_sections || []}
+        onClose={() => setEditingChunk(null)}
+        onSave={handleUpdateChunk}
       />
     </div>
   );
