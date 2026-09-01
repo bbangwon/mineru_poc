@@ -1,6 +1,7 @@
 import React from 'react';
 import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
+import { formatChunkPageFull } from '../utils/pageUtils';
 
 interface ChunkCardProps {
   chunk: ChildChunk;
@@ -96,7 +97,7 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             {chunk.chunk_id}
           </span>
           <span className="text-[11px] text-slate-400 font-mono">
-            Page {chunk.page_number}
+            {formatChunkPageFull(chunk)}
           </span>
         </div>
 

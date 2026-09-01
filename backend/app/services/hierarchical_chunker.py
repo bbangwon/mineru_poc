@@ -597,21 +597,33 @@ class HierarchicalChunker:
                 continue
             parent = parent_map.get(chunk.get("parent_id", ""), {})
             breadcrumbs = chunk.get("breadcrumbs") or []
+            start_page = chunk.get("page_number", 1)
+            end_page = chunk.get("page_end", start_page)
+            if end_page < start_page:
+                end_page = start_page
+            pages_list = list(range(start_page, end_page + 1))
+
+            meta = dict(chunk.get("metadata") or {})
+            meta["page"] = start_page
+            meta["page_start"] = start_page
+            meta["page_end"] = end_page
+            meta["pages"] = pages_list
+            meta["parent_breadcrumbs"] = breadcrumbs
+            meta["is_atomic_table"] = (chunk.get("chunk_type") == "table")
+
             record = {
                 "id": chunk.get("chunk_id", ""),
                 "parent_id": chunk.get("parent_id", ""),
                 "parent_title": parent.get("title", ""),
                 "chunk_type": chunk.get("chunk_type", "paragraph"),
                 "text": chunk.get("text", ""),
-                "page": chunk.get("page_number", 1),
+                "page": start_page,
                 "breadcrumbs": breadcrumbs,
                 "breadcrumbs_str": " > ".join(breadcrumbs),
-                "metadata": {
-                    **(chunk.get("metadata") or {}),
-                    "parent_breadcrumbs": breadcrumbs,
-                    "is_atomic_table": (chunk.get("chunk_type") == "table"),
-                }
+                "metadata": meta,
             }
+            if end_page > start_page:
+                record["page_end"] = end_page
             if chunk.get("chunk_type") == "table":
                 record["raw_html"] = chunk.get("raw_html", "")
                 record["image_path"] = chunk.get("image_path", "")
@@ -662,8 +674,17 @@ class HierarchicalChunker:
             chunk_id_map[old_c_id] = new_c_id
 
             chunk["chunk_id"] = new_c_id
+            start_p = chunk.get("page_number", 1)
+            end_p = chunk.get("page_end", start_p)
+            if end_p < start_p:
+                end_p = start_p
+
             if isinstance(chunk.get("metadata"), dict):
                 chunk["metadata"].pop("original_chunk_id", None)
+                chunk["metadata"]["page"] = start_p
+                chunk["metadata"]["page_start"] = start_p
+                chunk["metadata"]["page_end"] = end_p
+                chunk["metadata"]["pages"] = list(range(start_p, end_p + 1))
             new_chunks.append(chunk)
 
         # 3. 섹션 내 부모 섹션 및 자식 청크 참조 일괄 갱신

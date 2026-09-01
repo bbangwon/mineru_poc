@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Code2, X, Copy, Check } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
+import { getChunkPageList } from '../utils/pageUtils';
 
 interface JsonlModalProps {
   chunk: ChildChunk | null;
@@ -18,6 +19,9 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
   if (!chunk) return null;
 
   const parent = parentSections.find((p) => p.id === chunk.parent_id);
+  const startPage = chunk.page_number || 1;
+  const endPage = chunk.page_end && chunk.page_end >= startPage ? chunk.page_end : startPage;
+  const pages = getChunkPageList(startPage, endPage);
 
   const record: Record<string, any> = {
     id: chunk.chunk_id,
@@ -25,11 +29,16 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
     parent_title: parent?.title || '',
     chunk_type: chunk.chunk_type,
     text: chunk.text,
-    page: chunk.page_number,
+    page: startPage,
+    ...(endPage > startPage ? { page_end: endPage } : {}),
     breadcrumbs: chunk.breadcrumbs,
     breadcrumbs_str: (chunk.breadcrumbs || []).join(' > '),
     metadata: {
       ...(chunk.metadata || {}),
+      page: startPage,
+      page_start: startPage,
+      page_end: endPage,
+      pages: pages,
       parent_breadcrumbs: chunk.breadcrumbs,
       is_atomic_table: chunk.chunk_type === 'table',
     },

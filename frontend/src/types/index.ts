@@ -23,6 +23,7 @@ export interface ChildChunk {
   chunk_type: 'paragraph' | 'table' | 'article';
   text: string;
   page_number: number;
+  page_end?: number;
   breadcrumbs: string[];
   token_estimate: number;
   raw_html?: string;

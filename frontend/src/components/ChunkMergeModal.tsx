@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Merge,
   X,
@@ -17,7 +17,13 @@ interface ChunkMergeModalProps {
   selectedChunks: ChildChunk[];
   parentSections: ParentSection[];
   onClose: () => void;
-  onConfirmMerge: (chunkIds: string[], mergedText: string, customChunkId?: string) => void;
+  onConfirmMerge: (
+    chunkIds: string[],
+    mergedText: string,
+    customChunkId?: string,
+    pageStart?: number,
+    pageEnd?: number
+  ) => void;
 }
 
 export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
@@ -30,22 +36,31 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
   const [mergedText, setMergedText] = useState('');
   const [customChunkId, setCustomChunkId] = useState('');
 
+  const minPageCalculated = selectedChunks.length > 0
+    ? Math.min(...selectedChunks.map((c) => c.page_number || 1))
+    : 1;
+  const maxPageCalculated = selectedChunks.length > 0
+    ? Math.max(...selectedChunks.map((c) => (c as any).page_end || c.page_number || 1))
+    : 1;
+
+  const [pageStart, setPageStart] = useState<number>(minPageCalculated);
+  const [pageEnd, setPageEnd] = useState<number | ''>(maxPageCalculated > minPageCalculated ? maxPageCalculated : '');
+
   // Helper: count words
   const countWords = (text: string) => {
     if (!text || !text.trim()) return 0;
     return text.trim().split(/\s+/).length;
   };
 
-  const parentMap = React.useMemo(() => {
-    const map = new Map<string, ParentSection>();
-    parentSections.forEach((p) => map.set(p.id, p));
-    return map;
-  }, [parentSections]);
+  const parentMap = useMemo(
+    () => new Map(parentSections.map((p) => [p.id, p])),
+    [parentSections]
+  );
 
   const firstChunk = selectedChunks[0];
-  const defaultMergedId = firstChunk ? firstChunk.chunk_id : '';
+  const defaultMergedId = firstChunk?.chunk_id || '';
 
-  // Generate combined text when separator or selection changes
+  // Synchronize combined text when selected chunks change
   useEffect(() => {
     if (selectedChunks.length === 0) return;
     const combined = selectedChunks
@@ -54,7 +69,9 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
       .join(separator);
     setMergedText(combined);
     setCustomChunkId(defaultMergedId);
-  }, [selectedChunks, separator, defaultMergedId]);
+    setPageStart(minPageCalculated);
+    setPageEnd(maxPageCalculated > minPageCalculated ? maxPageCalculated : '');
+  }, [selectedChunks, separator, defaultMergedId, minPageCalculated, maxPageCalculated]);
 
   if (selectedChunks.length < 2) return null;
 
@@ -63,9 +80,7 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
   const isOverLimit = totalWords > 800;
   const isUnderLimit = totalWords < 20;
 
-  const minPage = Math.min(...selectedChunks.map((c) => c.page_number));
-  const maxPage = Math.max(...selectedChunks.map((c) => c.page_number));
-  const pageDisplay = minPage === maxPage ? `p.${minPage}` : `p.${minPage}~p.${maxPage}`;
+  const pageDisplay = pageEnd && pageEnd > pageStart ? `p.${pageStart}~p.${pageEnd}` : `p.${pageStart}`;
 
   const primaryParent = firstChunk ? parentMap.get(firstChunk.parent_id) : null;
 
@@ -73,7 +88,15 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
     e.preventDefault();
     if (!mergedText.trim()) return;
     const chunkIds = selectedChunks.map((c) => c.chunk_id);
-    onConfirmMerge(chunkIds, mergedText.trim(), customChunkId.trim() || defaultMergedId);
+    const finalStart = Math.max(1, pageStart);
+    const finalEnd = typeof pageEnd === 'number' && pageEnd > finalStart ? pageEnd : undefined;
+    onConfirmMerge(
+      chunkIds,
+      mergedText.trim(),
+      customChunkId.trim() || defaultMergedId,
+      finalStart,
+      finalEnd
+    );
     onClose();
   };
 
@@ -188,8 +211,36 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
               value={customChunkId}
               onChange={(e) => setCustomChunkId(e.target.value)}
               placeholder={defaultMergedId}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 font-mono text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 w-48"
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 font-mono text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 w-44"
             />
+          </div>
+
+          {/* Page Range */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-semibold text-slate-700">페이지 범위:</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min="1"
+                value={pageStart}
+                onChange={(e) => setPageStart(parseInt(e.target.value, 10) || 1)}
+                className="w-16 bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                title="시작 페이지"
+              />
+              <span className="text-slate-400 font-bold">~</span>
+              <input
+                type="number"
+                min={pageStart}
+                value={pageEnd}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setPageEnd(val ? parseInt(val, 10) : '');
+                }}
+                placeholder="끝"
+                className="w-16 bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                title="끝 페이지 (선택)"
+              />
+            </div>
           </div>
         </div>
 

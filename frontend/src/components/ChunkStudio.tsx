@@ -35,6 +35,7 @@ import type { ChildChunk, ParentSection } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
 import { AddSectionModal } from './AddSectionModal';
+import { formatChunkPage, formatChunkPageFull } from '../utils/pageUtils';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
@@ -52,8 +53,20 @@ interface ChunkStudioProps {
   onBatchCleanEmptySections?: () => void;
   onToggleIgnoreChunk: (chunkId: string) => void;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
-  onSplitChunk?: (chunkId: string, part1Text: string, part2Text: string) => void;
-  onMergeChunks?: (chunkIds: string[], mergedText: string, customMergedId?: string) => void;
+  onSplitChunk?: (
+    chunkId: string,
+    part1Text: string,
+    part2Text: string,
+    page1?: number,
+    page2?: number
+  ) => void;
+  onMergeChunks?: (
+    chunkIds: string[],
+    mergedText: string,
+    customMergedId?: string,
+    pageStart?: number,
+    pageEnd?: number
+  ) => void;
   onBatchCleanEmptyChunks?: () => void;
   onReindexIds?: () => void;
   isLoading: boolean;
@@ -921,7 +934,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         </span>
 
                         <span className="text-[10px] text-slate-400 font-mono">
-                          p.{chunk.page_number}
+                          {formatChunkPage(chunk)}
                         </span>
 
                         {isEdited && (
@@ -1027,7 +1040,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Page {activeChunk.page_number} · 실시간 자동 동기화
+                      {formatChunkPageFull(activeChunk)} · 실시간 자동 동기화
                     </p>
                   </div>
                 </div>
@@ -1363,8 +1376,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
         <ChunkSplitModal
           chunk={activeChunk}
           onClose={() => setIsSplitModalOpen(false)}
-          onConfirmSplit={(id, p1, p2) => {
-            onSplitChunk(id, p1, p2);
+          onConfirmSplit={(id, p1, p2, page1, page2) => {
+            onSplitChunk(id, p1, p2, page1, page2);
             setIsSplitModalOpen(false);
           }}
         />
@@ -1376,8 +1389,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           selectedChunks={selectedChunksList}
           parentSections={parentSections}
           onClose={() => setIsMergeModalOpen(false)}
-          onConfirmMerge={(ids, text, newId) => {
-            onMergeChunks(ids, text, newId);
+          onConfirmMerge={(ids, text, newId, pageStart, pageEnd) => {
+            onMergeChunks(ids, text, newId, pageStart, pageEnd);
             clearSelectedChunks();
             setIsMergeModalOpen(false);
           }}

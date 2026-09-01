@@ -21,6 +21,7 @@ import {
   resetEtlResult,
 } from './api/client';
 import { getNextChunkId, reindexEtlData } from './utils/idUtils';
+import { syncChunkPageMetadata } from './utils/pageUtils';
 import type { PdfItem, EtlResult, ChildChunk, ParentSection, JobStatusResponse } from './types';
 
 export function App() {
@@ -240,29 +241,38 @@ export function App() {
   const handleUpdateChunk = (updatedChunk: ChildChunk, silent = false) => {
     if (!etlData) return;
 
+    const finalChunk: ChildChunk = {
+      ...updatedChunk,
+      metadata: syncChunkPageMetadata(
+        updatedChunk.metadata,
+        updatedChunk.page_number,
+        updatedChunk.page_end
+      ),
+    };
+
     // 1) Update child_chunks array
     const updatedChunks = etlData.child_chunks.map((c) =>
-      c.chunk_id === updatedChunk.chunk_id ? updatedChunk : c
+      c.chunk_id === finalChunk.chunk_id ? finalChunk : c
     );
 
     // 2) Synchronize parent sections if parent_id was changed
-    const oldChunk = etlData.child_chunks.find((c) => c.chunk_id === updatedChunk.chunk_id);
+    const oldChunk = etlData.child_chunks.find((c) => c.chunk_id === finalChunk.chunk_id);
     let updatedSections = [...etlData.parent_sections];
 
-    if (oldChunk && oldChunk.parent_id !== updatedChunk.parent_id) {
+    if (oldChunk && oldChunk.parent_id !== finalChunk.parent_id) {
       updatedSections = updatedSections.map((sec) => {
         if (sec.id === oldChunk.parent_id) {
           // Remove from old parent
           return {
             ...sec,
-            child_chunk_ids: sec.child_chunk_ids.filter((id) => id !== updatedChunk.chunk_id),
+            child_chunk_ids: sec.child_chunk_ids.filter((id) => id !== finalChunk.chunk_id),
           };
         }
-        if (sec.id === updatedChunk.parent_id) {
+        if (sec.id === finalChunk.parent_id) {
           // Add to new parent
           return {
             ...sec,
-            child_chunk_ids: [...sec.child_chunk_ids, updatedChunk.chunk_id],
+            child_chunk_ids: [...sec.child_chunk_ids, finalChunk.chunk_id],
           };
         }
         return sec;
@@ -498,7 +508,13 @@ export function App() {
   };
 
   // 8. Split Chunk Handler (Phase 3)
-  const handleSplitChunk = (targetChunkId: string, part1Text: string, part2Text: string) => {
+  const handleSplitChunk = (
+    targetChunkId: string,
+    part1Text: string,
+    part2Text: string,
+    page1?: number,
+    page2?: number
+  ) => {
     if (!etlData) return;
     const targetIndex = etlData.child_chunks.findIndex((c) => c.chunk_id === targetChunkId);
     if (targetIndex === -1) return;
@@ -511,6 +527,9 @@ export function App() {
     const words1 = part1Text.trim() ? part1Text.trim().split(/\s+/).length : 0;
     const words2 = part2Text.trim() ? part2Text.trim().split(/\s+/).length : 0;
 
+    const p1 = page1 || target.page_number || 1;
+    const p2 = page2 || target.page_end || target.page_number || 1;
+
     const cleanMetadata = target.metadata ? { ...target.metadata } : undefined;
     if (cleanMetadata) {
       delete cleanMetadata.is_split;
@@ -518,12 +537,24 @@ export function App() {
       delete cleanMetadata.split_part;
     }
 
+    const chunk1Meta = syncChunkPageMetadata(
+      cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 1 } : { split_from: targetChunkId, split_part: 1 },
+      p1
+    );
+
+    const chunk2Meta = syncChunkPageMetadata(
+      cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 2 } : { split_from: targetChunkId, split_part: 2 },
+      p2
+    );
+
     const chunk1: ChildChunk = {
       ...target,
       chunk_id: id1,
       text: part1Text,
       token_estimate: words1,
-      metadata: cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 1 } : { split_from: targetChunkId, split_part: 1 },
+      page_number: p1,
+      page_end: undefined,
+      metadata: chunk1Meta,
       is_edited: true,
     };
 
@@ -532,7 +563,9 @@ export function App() {
       chunk_id: id2,
       text: part2Text,
       token_estimate: words2,
-      metadata: cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 2 } : { split_from: targetChunkId, split_part: 2 },
+      page_number: p2,
+      page_end: undefined,
+      metadata: chunk2Meta,
       is_edited: true,
     };
 
@@ -577,11 +610,17 @@ export function App() {
       stats: updatedStats,
     });
     setIsDirty(true);
-    showToast(`청크(${targetChunkId})가 2개(${chunk1.chunk_id}, ${chunk2.chunk_id})로 분할되었습니다.`);
+    showToast(`청크(${targetChunkId})가 2개(p.${chunk1.page_number} / p.${chunk2.page_number})로 분할되었습니다.`);
   };
 
   // 9. Merge Chunks Handler (Phase 3)
-  const handleMergeChunks = (chunkIds: string[], mergedText: string, customMergedId?: string) => {
+  const handleMergeChunks = (
+    chunkIds: string[],
+    mergedText: string,
+    customMergedId?: string,
+    pageStart?: number,
+    pageEnd?: number
+  ) => {
     if (!etlData || chunkIds.length < 2) return;
 
     const selectedChunks = chunkIds
@@ -603,7 +642,9 @@ export function App() {
     }
 
     const words = mergedText.trim() ? mergedText.trim().split(/\s+/).length : 0;
-    const minPage = Math.min(...selectedChunks.map((c) => c.page_number));
+    const minPage = pageStart || Math.min(...selectedChunks.map((c) => c.page_number || 1));
+    const maxPage = pageEnd || Math.max(...selectedChunks.map((c) => c.page_end || c.page_number || 1));
+    const finalEnd = maxPage > minPage ? maxPage : undefined;
 
     const cleanMetadata = firstChunk.metadata ? { ...firstChunk.metadata } : undefined;
     if (cleanMetadata) {
@@ -612,18 +653,25 @@ export function App() {
       delete cleanMetadata.merged_count;
     }
 
+    const mergedMeta = syncChunkPageMetadata(
+      {
+        ...(cleanMetadata || {}),
+        is_merged: true,
+        merged_from: chunkIds,
+        merged_count: chunkIds.length,
+      },
+      minPage,
+      finalEnd
+    );
+
     const mergedChunk: ChildChunk = {
       ...firstChunk,
       chunk_id: mergedId,
       text: mergedText,
       token_estimate: words,
       page_number: minPage,
-      metadata: {
-        ...(cleanMetadata || {}),
-        is_merged: true,
-        merged_from: chunkIds,
-        merged_count: chunkIds.length,
-      },
+      page_end: finalEnd,
+      metadata: mergedMeta,
       is_edited: true,
       is_ignored: false,
     };

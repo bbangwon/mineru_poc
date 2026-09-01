@@ -14,7 +14,13 @@ import type { ChildChunk } from '../types';
 interface ChunkSplitModalProps {
   chunk: ChildChunk | null;
   onClose: () => void;
-  onConfirmSplit: (chunkId: string, part1Text: string, part2Text: string) => void;
+  onConfirmSplit: (
+    chunkId: string,
+    part1Text: string,
+    part2Text: string,
+    page1?: number,
+    page2?: number
+  ) => void;
 }
 
 export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
@@ -24,6 +30,8 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
 }) => {
   const [part1, setPart1] = useState('');
   const [part2, setPart2] = useState('');
+  const [page1, setPage1] = useState<number>(chunk?.page_number || 1);
+  const [page2, setPage2] = useState<number>(chunk?.page_end || chunk?.page_number || 1);
 
   // Helper: Calculate word count
   const countWords = (text: string) => {
@@ -81,6 +89,9 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
   useEffect(() => {
     if (!chunk) return;
     const fullText = chunk.text || '';
+    setPage1(chunk.page_number || 1);
+    setPage2(chunk.page_end || chunk.page_number || 1);
+
     if (fullText.includes('\n\n')) {
       splitAtDelimiter(fullText, '\n\n');
     } else if (fullText.includes('\n')) {
@@ -108,7 +119,7 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSplit) return;
-    onConfirmSplit(chunk.chunk_id, part1.trim(), part2.trim());
+    onConfirmSplit(chunk.chunk_id, part1.trim(), part2.trim(), Math.max(1, page1), Math.max(1, page2));
     onClose();
   };
 
@@ -128,7 +139,9 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
                   {chunk.chunk_id}
                 </span>
                 <span className="text-xs text-slate-400 font-mono">
-                  p.{chunk.page_number}
+                  {chunk.page_end && chunk.page_end > chunk.page_number
+                    ? `p.${chunk.page_number}~p.${chunk.page_end}`
+                    : `p.${chunk.page_number}`}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -185,7 +198,12 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (chunk.text) splitAtMidpoint(chunk.text);
+              const fullText = chunk.text || '';
+              if (fullText.includes('\n\n')) {
+                splitAtDelimiter(fullText, '\n\n');
+              } else {
+                splitAtMidpoint(fullText);
+              }
             }}
             className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
             title="초기 분할 위치로 리셋"
@@ -221,10 +239,21 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
               <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  <h4 className="text-xs font-bold text-slate-800">청크 1 (Part 1)</h4>
+                  <h4 className="text-xs font-bold text-slate-800">청크 1</h4>
                   <span className="font-mono text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
                     {chunkId1}
                   </span>
+                  <div className="flex items-center gap-1 ml-1">
+                    <span className="text-[11px] text-slate-500 font-semibold">Page</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={page1}
+                      onChange={(e) => setPage1(parseInt(e.target.value, 10) || 1)}
+                      className="w-14 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800"
+                      title="청크 1 페이지 번호"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono text-slate-500">
@@ -264,10 +293,21 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
               <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
-                  <h4 className="text-xs font-bold text-slate-800">청크 2 (Part 2)</h4>
+                  <h4 className="text-xs font-bold text-slate-800">청크 2</h4>
                   <span className="font-mono text-[10px] font-semibold bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded">
                     {chunkId2}
                   </span>
+                  <div className="flex items-center gap-1 ml-1">
+                    <span className="text-[11px] text-slate-500 font-semibold">Page</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={page2}
+                      onChange={(e) => setPage2(parseInt(e.target.value, 10) || 1)}
+                      className="w-14 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800"
+                      title="청크 2 페이지 번호"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono text-slate-500">

@@ -1,4 +1,5 @@
 import type { EtlResult, ChildChunk } from '../types';
+import { syncChunkPageMetadata } from './pageUtils';
 
 /**
  * 주어진 청크 목록에서 사용된 c 번호 중 최댓값 + 1을 채번하여 새 청크 ID를 생성합니다.
@@ -53,10 +54,15 @@ export function reindexEtlData(etl: EtlResult): EtlResult {
     chunkIdMap[chunk.chunk_id] = newChunkId;
     const meta = { ...(chunk.metadata || {}) };
     delete (meta as Record<string, any>).original_chunk_id;
+    const synchronizedMeta = syncChunkPageMetadata(
+      meta,
+      chunk.page_number,
+      chunk.page_end
+    );
     return {
       ...chunk,
       chunk_id: newChunkId,
-      metadata: meta,
+      metadata: synchronizedMeta,
     };
   });
 

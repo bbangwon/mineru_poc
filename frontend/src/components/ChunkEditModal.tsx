@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree } from 'lucide-react';
+import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree, BookOpen } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
+import { syncChunkPageMetadata, formatChunkPageFull } from '../utils/pageUtils';
 
 interface ChunkEditModalProps {
   chunk: ChildChunk | null;
@@ -17,6 +18,8 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
 }) => {
   const [text, setText] = useState(chunk?.text || '');
   const [parentId, setParentId] = useState(chunk?.parent_id || '');
+  const [pageNumber, setPageNumber] = useState<number>(chunk?.page_number || 1);
+  const [pageEnd, setPageEnd] = useState<number | ''>(chunk?.page_end || '');
   const [isIgnored, setIsIgnored] = useState(Boolean(chunk?.is_ignored));
   const [activeTab, setActiveTab] = useState<'text' | 'raw_html'>('text');
 
@@ -31,6 +34,8 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
     if (!chunk) return;
     setText(chunk.text || '');
     setParentId(chunk.parent_id || '');
+    setPageNumber(chunk.page_number || 1);
+    setPageEnd(chunk.page_end || '');
     setIsIgnored(Boolean(chunk.is_ignored));
     setRawHtml(chunk.raw_html || '');
     setTableCaption(chunk.table_caption || '');
@@ -60,14 +65,20 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
       }
     }
 
+    const startPage = Math.max(1, pageNumber);
+    const endPageNum = typeof pageEnd === 'number' && pageEnd > startPage ? pageEnd : undefined;
+
     const updated: ChildChunk = {
       ...chunk,
       text: text,
       parent_id: parentId,
+      page_number: startPage,
+      page_end: endPageNum,
       breadcrumbs: updatedBreadcrumbs,
       is_ignored: isIgnored,
       is_edited: true,
       token_estimate: wordCount,
+      metadata: syncChunkPageMetadata(chunk.metadata, startPage, endPageNum),
     };
 
     if (isTable) {
@@ -108,7 +119,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                페이지 {chunk.page_number} · {isTable ? '원형 보존 표 청크' : isArticle ? '조문 청크' : '일반 문단 청크'}
+                {formatChunkPageFull(chunk)} · {isTable ? '원형 보존 표 청크' : isArticle ? '조문 청크' : '일반 문단 청크'}
               </p>
             </div>
           </div>
@@ -123,13 +134,13 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
-          {/* Top Options Row: Parent Section Selector & Embedding Exclude Toggle */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+          {/* Top Options Row: Parent Section Selector, Page Range & Embedding Exclude Toggle */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
             {/* Parent Section Selector */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
                 <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
-                소속 부모 섹션 (Hierarchy Section)
+                소속 부모 섹션
               </label>
               <select
                 value={parentId}
@@ -138,12 +149,49 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
               >
                 {parentSections.map((sec) => (
                   <option key={sec.id} value={sec.id}>
-                    {sec.title} (Level {sec.level}, ID: {sec.id})
+                    {sec.title} (Level {sec.level})
                   </option>
                 ))}
               </select>
               <p className="text-[11px] text-slate-500 mt-1">
-                부모 섹션을 변경하면 검색 인덱싱 시 상위 브레드크럼 컨텍스트가 갱신됩니다.
+                상위 브레드크럼 컨텍스트가 갱신됩니다.
+              </p>
+            </div>
+
+            {/* Page Number & Range Selector */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                페이지 번호 (시작 ~ 끝)
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <input
+                    type="number"
+                    min="1"
+                    value={pageNumber}
+                    onChange={(e) => setPageNumber(parseInt(e.target.value, 10) || 1)}
+                    className="w-full text-xs font-mono font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="시작 페이지"
+                  />
+                </div>
+                <span className="text-slate-400 text-xs font-bold">~</span>
+                <div className="flex-1">
+                  <input
+                    type="number"
+                    min={pageNumber}
+                    value={pageEnd}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      setPageEnd(val ? parseInt(val, 10) : '');
+                    }}
+                    className="w-full text-xs font-mono font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="끝 (선택)"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                단일 페이지는 시작만, 병합 청크는 끝까지 지정
               </p>
             </div>
 
