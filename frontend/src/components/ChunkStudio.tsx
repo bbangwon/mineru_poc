@@ -24,8 +24,14 @@ import {
   ShieldCheck,
   Sparkles,
   Info,
+  Scissors,
+  Merge,
+  Square,
+  CheckSquare,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
+import { ChunkSplitModal } from './ChunkSplitModal';
+import { ChunkMergeModal } from './ChunkMergeModal';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
@@ -36,6 +42,9 @@ interface ChunkStudioProps {
   onUpdateSectionTitle: (sectionId: string, newTitle: string) => void;
   onToggleIgnoreChunk: (chunkId: string) => void;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
+  onSplitChunk?: (chunkId: string, part1Text: string, part2Text: string) => void;
+  onMergeChunks?: (chunkIds: string[], mergedText: string, customMergedId?: string) => void;
+  onBatchCleanEmptyChunks?: () => void;
   isLoading: boolean;
 }
 
@@ -48,6 +57,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onUpdateSectionTitle,
   onToggleIgnoreChunk,
   onOpenJsonlModal,
+  onSplitChunk,
+  onMergeChunks,
+  onBatchCleanEmptyChunks,
   isLoading,
 }) => {
   // 1. Column 1 State (Hierarchy Tree)
@@ -55,12 +67,17 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
 
-  // 2. Column 2 State (Chunk Timeline)
+  // 2. Column 2 State (Chunk Timeline & Selection & Linter)
   const [chunkQuery, setChunkQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'table' | 'paragraph' | 'article'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'edited' | 'ignored'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'edited' | 'ignored' | 'linter' | 'empty'>('all');
+  const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set());
 
-  // 3. Column 3 State (Focus Editor)
+  // 3. Modals State
+  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+
+  // 4. Column 3 State (Focus Editor)
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [editorTab, setEditorTab] = useState<'text' | 'raw_html' | 'preview'>('text');
   const [newMetaKey, setNewMetaKey] = useState('');
@@ -80,6 +97,25 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return parentSections.filter((s) => s.title.toLowerCase().includes(term));
   }, [parentSections, sectionSearch]);
 
+  // Linter statistics for the entire document
+  const linterStats = useMemo(() => {
+    let emptyCount = 0;
+    let overCount = 0;
+    let underCount = 0;
+    for (const c of childChunks) {
+      const words = c.token_estimate || (c.text ? c.text.trim().split(/\s+/).length : 0);
+      const isEmpty = (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim());
+      if (isEmpty) {
+        emptyCount++;
+      } else if (words > 800) {
+        overCount++;
+      } else if (words < 20) {
+        underCount++;
+      }
+    }
+    return { emptyCount, overCount, underCount, totalWarnings: emptyCount + overCount + underCount };
+  }, [childChunks]);
+
   // Filtered Chunks for Column 2
   const filteredChunks = useMemo(() => {
     let result = childChunks;
@@ -96,6 +132,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       result = result.filter((c) => Boolean(c.is_edited));
     } else if (statusFilter === 'ignored') {
       result = result.filter((c) => Boolean(c.is_ignored));
+    } else if (statusFilter === 'linter') {
+      result = result.filter((c) => {
+        const words = c.token_estimate || (c.text ? c.text.trim().split(/\s+/).length : 0);
+        const isEmpty = (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim());
+        return words > 800 || (words > 0 && words < 20) || isEmpty;
+      });
+    } else if (statusFilter === 'empty') {
+      result = result.filter((c) => (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim()));
     }
 
     if (chunkQuery.trim()) {
@@ -110,6 +154,35 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
     return result;
   }, [childChunks, selectedSectionId, typeFilter, statusFilter, chunkQuery]);
+
+  // Multi-selection methods
+  const toggleSelectChunk = (chunkId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedChunkIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chunkId)) {
+        next.delete(chunkId);
+      } else {
+        next.add(chunkId);
+      }
+      return next;
+    });
+  };
+
+  const clearSelectedChunks = () => {
+    setSelectedChunkIds(new Set());
+  };
+
+  const selectAllFilteredChunks = () => {
+    const next = new Set(selectedChunkIds);
+    filteredChunks.forEach((c) => next.add(c.chunk_id));
+    setSelectedChunkIds(next);
+  };
+
+  // Selected chunks sorted by original childChunks index order
+  const selectedChunksList = useMemo(() => {
+    return childChunks.filter((c) => selectedChunkIds.has(c.chunk_id));
+  }, [childChunks, selectedChunkIds]);
 
   // Derived active chunk ID: fallback to first chunk in filtered list if not selected or filtered out
   const activeChunkId = selectedChunkId && filteredChunks.some((c) => c.chunk_id === selectedChunkId)
@@ -476,8 +549,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 </button>
               </div>
 
-              {/* Status Filters */}
-              <div className="flex items-center gap-1">
+              {/* Status & Linter Filters */}
+              <div className="flex items-center gap-1 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setStatusFilter(statusFilter === 'edited' ? 'all' : 'edited')}
@@ -502,9 +575,106 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 >
                   제외됨
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'linter' ? 'all' : 'linter')}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
+                    statusFilter === 'linter'
+                      ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-2xs'
+                      : linterStats.totalWarnings > 0
+                      ? 'border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100'
+                      : 'border-slate-200 text-slate-400 hover:bg-slate-50'
+                  }`}
+                  title="토큰 초과/부족/공백 청크 필터링"
+                >
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  <span>품질경고</span>
+                  {linterStats.totalWarnings > 0 && (
+                    <span className="font-mono text-[9px] px-1 rounded bg-amber-200 text-amber-900">
+                      {linterStats.totalWarnings}
+                    </span>
+                  )}
+                </button>
+                {linterStats.emptyCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(statusFilter === 'empty' ? 'all' : 'empty')}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
+                      statusFilter === 'empty'
+                        ? 'bg-rose-600 text-white border-rose-700 font-bold shadow-2xs'
+                        : 'border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100'
+                    }`}
+                    title="공백만 있는 빈 청크 보기"
+                  >
+                    <span>빈 청크</span>
+                    <span className="font-mono text-[9px] px-1 rounded bg-rose-200 text-rose-900">
+                      {linterStats.emptyCount}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
+
+          {/* Empty Chunks Linter Banner */}
+          {linterStats.emptyCount > 0 && onBatchCleanEmptyChunks && (
+            <div className="px-3 py-2 bg-rose-50 border-b border-rose-200 flex items-center justify-between text-xs text-rose-900 shrink-0 animate-in fade-in">
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>공백만 있는 빈 청크 <strong>{linterStats.emptyCount}</strong>개 발견</span>
+              </span>
+              <button
+                type="button"
+                onClick={onBatchCleanEmptyChunks}
+                className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                title="빈 청크를 임베딩 대상에서 일괄 제외 처리합니다."
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>일괄 정리</span>
+              </button>
+            </div>
+          )}
+
+          {/* Multi-Selection Merge Action Bar */}
+          {selectedChunkIds.size > 0 && (
+            <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-200 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xs text-indigo-950 flex items-center gap-1">
+                  <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{selectedChunkIds.size}개 선택됨</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSelectedChunks}
+                  className="text-[11px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                >
+                  해제
+                </button>
+                <button
+                  type="button"
+                  onClick={selectAllFilteredChunks}
+                  className="text-[11px] text-indigo-700 hover:text-indigo-950 underline cursor-pointer"
+                >
+                  현재 목록 전체선택
+                </button>
+              </div>
+
+              <button
+                type="button"
+                disabled={selectedChunkIds.size < 2 || !onMergeChunks}
+                onClick={() => setIsMergeModalOpen(true)}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                title={
+                  selectedChunkIds.size < 2
+                    ? '2개 이상의 청크를 선택해야 병합할 수 있습니다.'
+                    : '선택한 청크들을 하나로 병합합니다.'
+                }
+              >
+                <Merge className="w-3.5 h-3.5" />
+                <span>청크 병합 ({selectedChunkIds.size})</span>
+              </button>
+            </div>
+          )}
 
           {/* Chunk Card List */}
           <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
@@ -518,27 +688,49 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             ) : (
               filteredChunks.map((chunk) => {
                 const isSelected = activeChunkId === chunk.chunk_id;
+                const isChecked = selectedChunkIds.has(chunk.chunk_id);
                 const isTable = chunk.chunk_type === 'table';
                 const isArticle = chunk.chunk_type === 'article';
                 const isIgnored = Boolean(chunk.is_ignored);
                 const isEdited = Boolean(chunk.is_edited);
                 const parent = parentMap.get(chunk.parent_id);
 
+                const cWords = chunk.token_estimate || (chunk.text ? chunk.text.trim().split(/\s+/).length : 0);
+                const isCEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
+                const isCOver = cWords > 800;
+                const isCUnder = !isCEmpty && cWords > 0 && cWords < 20;
+
                 return (
                   <div
                     key={chunk.chunk_id}
                     onClick={() => setSelectedChunkId(chunk.chunk_id)}
                     className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
-                      isSelected
+                      isChecked
+                        ? 'bg-indigo-50/50 border-indigo-400 ring-2 ring-indigo-400/30 shadow-xs'
+                        : isSelected
                         ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
                         : isIgnored
                         ? 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-100 hover:bg-white'
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
                     }`}
                   >
-                    {/* Top Row: Type, Page, ID, Status Badges */}
+                    {/* Top Row: Checkbox, Type, Page, ID, Status & Linter Badges */}
                     <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-100">
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Checkbox for merge selection */}
+                        <button
+                          type="button"
+                          onClick={(e) => toggleSelectChunk(chunk.chunk_id, e)}
+                          className="text-slate-400 hover:text-indigo-600 transition p-0.5 rounded cursor-pointer shrink-0"
+                          title={isChecked ? '선택 해제' : '병합 대상으로 선택'}
+                        >
+                          {isChecked ? (
+                            <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                          ) : (
+                            <Square className="w-3.5 h-3.5 text-slate-300 hover:text-slate-500" />
+                          )}
+                        </button>
+
                         {isTable ? (
                           <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                             <Table2 className="w-3 h-3" />
@@ -577,6 +769,24 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             제외됨
                           </span>
                         )}
+
+                        {/* Linter Badges */}
+                        {isCEmpty ? (
+                          <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                            빈 청크
+                          </span>
+                        ) : isCOver ? (
+                          <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                            800+ words
+                          </span>
+                        ) : isCUnder ? (
+                          <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                            <Info className="w-2.5 h-2.5 text-sky-600" />
+                            &lt;20 words
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Quick Ignore Toggle Button */}
@@ -655,6 +865,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {onSplitChunk && activeChunk.chunk_type !== 'table' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSplitModalOpen(true)}
+                      className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
+                      title="긴 청크를 2개로 분할"
+                    >
+                      <Scissors className="w-3.5 h-3.5 text-amber-600" />
+                      <span>청크 분할</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => onOpenJsonlModal(activeChunk)}
@@ -678,14 +900,27 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 </div>
 
                 {isOverTokenLimit ? (
-                  <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                    800자 초과 (분할 권장)
-                  </span>
+                  <div className="flex items-center gap-1.5 font-sans">
+                    <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px] flex items-center gap-1 font-semibold">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      800자 초과 (분할 권장)
+                    </span>
+                    {onSplitChunk && activeChunk.chunk_type !== 'table' && (
+                      <button
+                        type="button"
+                        onClick={() => setIsSplitModalOpen(true)}
+                        className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="분할 도구 열기"
+                      >
+                        <Scissors className="w-3 h-3" />
+                        <span>지금 분할하기</span>
+                      </button>
+                    )}
+                  </div>
                 ) : isUnderTokenLimit ? (
                   <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">
                     <Info className="w-3.5 h-3.5 text-sky-600" />
-                    20단어 미만 (병합 권장)
+                    20단어 미만 (2열에서 병합 권장)
                   </span>
                 ) : (
                   <span className="text-emerald-700 font-sans text-[11px] flex items-center gap-1 font-medium">
@@ -953,8 +1188,33 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             </div>
           )}
         </section>
-
       </div>
+
+      {/* Chunk Split Modal */}
+      {isSplitModalOpen && activeChunk && onSplitChunk && (
+        <ChunkSplitModal
+          chunk={activeChunk}
+          onClose={() => setIsSplitModalOpen(false)}
+          onConfirmSplit={(id, p1, p2) => {
+            onSplitChunk(id, p1, p2);
+            setIsSplitModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* Chunk Merge Modal */}
+      {isMergeModalOpen && selectedChunksList.length >= 2 && onMergeChunks && (
+        <ChunkMergeModal
+          selectedChunks={selectedChunksList}
+          parentSections={parentSections}
+          onClose={() => setIsMergeModalOpen(false)}
+          onConfirmMerge={(ids, text, newId) => {
+            onMergeChunks(ids, text, newId);
+            clearSelectedChunks();
+            setIsMergeModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

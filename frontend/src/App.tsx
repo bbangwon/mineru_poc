@@ -335,7 +335,239 @@ export function App() {
     handleUpdateChunk(updatedChunk, false);
   };
 
-  // 8. Save ETL Result to Backend & Disk
+  // 8. Split Chunk Handler (Phase 3)
+  const handleSplitChunk = (targetChunkId: string, part1Text: string, part2Text: string) => {
+    if (!etlData) return;
+    const targetIndex = etlData.child_chunks.findIndex((c) => c.chunk_id === targetChunkId);
+    if (targetIndex === -1) return;
+    const target = etlData.child_chunks[targetIndex];
+
+    let baseId = targetChunkId;
+    let id1 = `${baseId}_split1`;
+    let id2 = `${baseId}_split2`;
+    let counter = 1;
+    while (etlData.child_chunks.some((c) => c.chunk_id === id1 || c.chunk_id === id2)) {
+      counter++;
+      id1 = `${baseId}_s${counter}_1`;
+      id2 = `${baseId}_s${counter}_2`;
+    }
+
+    const words1 = part1Text.trim() ? part1Text.trim().split(/\s+/).length : 0;
+    const words2 = part2Text.trim() ? part2Text.trim().split(/\s+/).length : 0;
+
+    const chunk1: ChildChunk = {
+      ...target,
+      chunk_id: id1,
+      text: part1Text,
+      token_estimate: words1,
+      metadata: {
+        ...(target.metadata || {}),
+        is_split: true,
+        split_from: targetChunkId,
+        split_part: 1,
+      },
+      is_edited: true,
+    };
+
+    const chunk2: ChildChunk = {
+      ...target,
+      chunk_id: id2,
+      text: part2Text,
+      token_estimate: words2,
+      metadata: {
+        ...(target.metadata || {}),
+        is_split: true,
+        split_from: targetChunkId,
+        split_part: 2,
+      },
+      is_edited: true,
+    };
+
+    // 1) Replace target chunk in child_chunks with [chunk1, chunk2]
+    const updatedChunks = [...etlData.child_chunks];
+    updatedChunks.splice(targetIndex, 1, chunk1, chunk2);
+
+    // 2) Update parent section child_chunk_ids
+    const updatedSections = etlData.parent_sections.map((sec) => {
+      if (sec.id === target.parent_id) {
+        const newIds: string[] = [];
+        for (const cid of sec.child_chunk_ids) {
+          if (cid === targetChunkId) {
+            newIds.push(chunk1.chunk_id, chunk2.chunk_id);
+          } else {
+            newIds.push(cid);
+          }
+        }
+        return {
+          ...sec,
+          child_chunk_ids: newIds,
+        };
+      }
+      return sec;
+    });
+
+    // 3) Recalculate stats
+    const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
+    const updatedStats = {
+      ...etlData.stats,
+      total_child_chunks: updatedChunks.length,
+      paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
+      table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    showToast(`청크(${targetChunkId})가 2개(${chunk1.chunk_id}, ${chunk2.chunk_id})로 분할되었습니다.`);
+  };
+
+  // 9. Merge Chunks Handler (Phase 3)
+  const handleMergeChunks = (chunkIds: string[], mergedText: string, customMergedId?: string) => {
+    if (!etlData || chunkIds.length < 2) return;
+
+    const selectedChunks = chunkIds
+      .map((id) => etlData.child_chunks.find((c) => c.chunk_id === id))
+      .filter((c): c is ChildChunk => Boolean(c));
+
+    if (selectedChunks.length < 2) return;
+
+    const firstChunk = selectedChunks[0];
+
+    let mergedId = customMergedId?.trim() || `${firstChunk.chunk_id}_merged`;
+    let counter = 1;
+    while (
+      etlData.child_chunks.some(
+        (c) => c.chunk_id === mergedId && !chunkIds.includes(c.chunk_id)
+      )
+    ) {
+      counter++;
+      mergedId = `${firstChunk.chunk_id}_merged${counter}`;
+    }
+
+    const words = mergedText.trim() ? mergedText.trim().split(/\s+/).length : 0;
+    const minPage = Math.min(...selectedChunks.map((c) => c.page_number));
+
+    const mergedChunk: ChildChunk = {
+      ...firstChunk,
+      chunk_id: mergedId,
+      text: mergedText,
+      token_estimate: words,
+      page_number: minPage,
+      metadata: {
+        ...(firstChunk.metadata || {}),
+        is_merged: true,
+        merged_from: chunkIds,
+        merged_count: chunkIds.length,
+      },
+      is_edited: true,
+      is_ignored: false,
+    };
+
+    // 1) Replace first chunk with mergedChunk, remove other selected chunks
+    const chunkIdsToRemove = new Set(chunkIds.slice(1));
+    const updatedChunks: ChildChunk[] = [];
+    for (let i = 0; i < etlData.child_chunks.length; i++) {
+      const c = etlData.child_chunks[i];
+      if (c.chunk_id === firstChunk.chunk_id) {
+        updatedChunks.push(mergedChunk);
+      } else if (!chunkIdsToRemove.has(c.chunk_id)) {
+        updatedChunks.push(c);
+      }
+    }
+
+    // 2) Update parent sections child_chunk_ids
+    const allSelectedSet = new Set(chunkIds);
+    const updatedSections = etlData.parent_sections.map((sec) => {
+      let containsFirst = false;
+      const filtered = sec.child_chunk_ids.filter((id) => {
+        if (id === firstChunk.chunk_id) {
+          containsFirst = true;
+          return true;
+        }
+        return !allSelectedSet.has(id);
+      });
+
+      if (containsFirst || sec.id === firstChunk.parent_id) {
+        const replaced = filtered.map((id) => (id === firstChunk.chunk_id ? mergedChunk.chunk_id : id));
+        if (!replaced.includes(mergedChunk.chunk_id)) {
+          replaced.push(mergedChunk.chunk_id);
+        }
+        return {
+          ...sec,
+          child_chunk_ids: replaced,
+        };
+      }
+
+      return {
+        ...sec,
+        child_chunk_ids: filtered,
+      };
+    });
+
+    // 3) Recalculate stats
+    const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
+    const updatedStats = {
+      ...etlData.stats,
+      total_child_chunks: updatedChunks.length,
+      paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
+      table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${mergedChunk.chunk_id}).`);
+  };
+
+  // 10. Batch Clean Empty Chunks Handler (Phase 3)
+  const handleBatchCleanEmptyChunks = () => {
+    if (!etlData) return;
+    const emptyChunks = etlData.child_chunks.filter(
+      (c) =>
+        (!c.text || !c.text.trim()) &&
+        (!c.raw_html || !c.raw_html.trim()) &&
+        !c.is_ignored
+    );
+
+    if (emptyChunks.length === 0) {
+      showToast('정리할 빈 청크가 없습니다.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `내용이 없는 ${emptyChunks.length}개의 빈 청크를 임베딩 제외(Ignore) 처리하시겠습니까?`
+    );
+    if (!confirmed) return;
+
+    const emptyIdSet = new Set(emptyChunks.map((c) => c.chunk_id));
+    const updatedChunks = etlData.child_chunks.map((c) => {
+      if (emptyIdSet.has(c.chunk_id)) {
+        return { ...c, is_ignored: true, is_edited: true };
+      }
+      return c;
+    });
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+    });
+    setIsDirty(true);
+    showToast(`🧹 ${emptyChunks.length}개의 빈 청크를 임베딩 제외 처리했습니다.`);
+  };
+
+  // 11. Save ETL Result to Backend & Disk
   const handleSaveEtl = async () => {
     if (!etlData) return;
     setIsSaving(true);
@@ -351,7 +583,7 @@ export function App() {
     }
   };
 
-  // 9. Reset ETL Result to Original
+  // 12. Reset ETL Result to Original
   const handleResetEtl = async () => {
     const confirmed = window.confirm('모든 수정 내용을 폐기하고 원본 파싱 결과로 복원하시겠습니까?');
     if (!confirmed) return;
@@ -487,6 +719,9 @@ export function App() {
               onUpdateSectionTitle={handleUpdateSectionTitle}
               onToggleIgnoreChunk={handleToggleIgnoreChunk}
               onOpenJsonlModal={setActiveModalChunk}
+              onSplitChunk={handleSplitChunk}
+              onMergeChunks={handleMergeChunks}
+              onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
               isLoading={isLoadingEtl}
             />
           </div>

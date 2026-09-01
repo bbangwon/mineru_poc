@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2 } from 'lucide-react';
+import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 
 interface ChunkCardProps {
@@ -20,6 +20,11 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
   const isIgnored = Boolean(chunk.is_ignored);
   const isEdited = Boolean(chunk.is_edited);
   const breadcrumbs = chunk.breadcrumbs || [];
+
+  const wordCount = chunk.token_estimate || (chunk.text ? chunk.text.trim().split(/\s+/).length : 0);
+  const isEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
+  const isOverTokenLimit = wordCount > 800;
+  const isUnderTokenLimit = !isEmpty && wordCount > 0 && wordCount < 20;
 
   return (
     <div
@@ -68,6 +73,24 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
               임베딩 제외
             </span>
           )}
+
+          {/* Linter Warning Badges */}
+          {isEmpty ? (
+            <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-rose-600" />
+              빈 청크
+            </span>
+          ) : isOverTokenLimit ? (
+            <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-amber-600" />
+              800+ words (분할 권장)
+            </span>
+          ) : isUnderTokenLimit ? (
+            <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
+              <Info className="w-3 h-3 text-sky-600" />
+              &lt;20 words (병합 권장)
+            </span>
+          ) : null}
 
           <span className="font-mono text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
             {chunk.chunk_id}

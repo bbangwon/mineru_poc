@@ -588,24 +588,25 @@ class HierarchicalChunker:
         for chunk in etl_result.get("child_chunks", []):
             if chunk.get("is_ignored"):
                 continue
-            parent = parent_map.get(chunk["parent_id"], {})
+            parent = parent_map.get(chunk.get("parent_id", ""), {})
+            breadcrumbs = chunk.get("breadcrumbs") or []
             record = {
-                "id": chunk["chunk_id"],
-                "parent_id": chunk["parent_id"],
+                "id": chunk.get("chunk_id", ""),
+                "parent_id": chunk.get("parent_id", ""),
                 "parent_title": parent.get("title", ""),
-                "chunk_type": chunk["chunk_type"],
-                "text": chunk["text"],
-                "page": chunk["page_number"],
-                "breadcrumbs": chunk["breadcrumbs"],
-                "breadcrumbs_str": " > ".join(chunk["breadcrumbs"]),
-                "bbox": chunk["bbox"],
+                "chunk_type": chunk.get("chunk_type", "paragraph"),
+                "text": chunk.get("text", ""),
+                "page": chunk.get("page_number", 1),
+                "breadcrumbs": breadcrumbs,
+                "breadcrumbs_str": " > ".join(breadcrumbs),
+                "bbox": chunk.get("bbox", []),
                 "metadata": {
-                    **chunk["metadata"],
-                    "parent_breadcrumbs": chunk["breadcrumbs"],
-                    "is_atomic_table": (chunk["chunk_type"] == "table"),
+                    **(chunk.get("metadata") or {}),
+                    "parent_breadcrumbs": breadcrumbs,
+                    "is_atomic_table": (chunk.get("chunk_type") == "table"),
                 }
             }
-            if chunk["chunk_type"] == "table":
+            if chunk.get("chunk_type") == "table":
                 record["raw_html"] = chunk.get("raw_html", "")
                 record["image_path"] = chunk.get("image_path", "")
                 record["table_caption"] = chunk.get("table_caption", "")
