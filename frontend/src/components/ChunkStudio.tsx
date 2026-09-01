@@ -28,10 +28,12 @@ import {
   Merge,
   Square,
   CheckSquare,
+  Trash2,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
+import { AddSectionModal } from './AddSectionModal';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
@@ -40,6 +42,13 @@ interface ChunkStudioProps {
   onSelectSection: (id: string | null) => void;
   onUpdateChunk: (updatedChunk: ChildChunk, silent?: boolean) => void;
   onUpdateSectionTitle: (sectionId: string, newTitle: string) => void;
+  onDeleteSection?: (sectionId: string, deleteChunks: boolean) => void;
+  onAddSection?: (sectionData: {
+    title: string;
+    parentSectionId?: string;
+    level: number;
+  }) => void;
+  onBatchCleanEmptySections?: () => void;
   onToggleIgnoreChunk: (chunkId: string) => void;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
   onSplitChunk?: (chunkId: string, part1Text: string, part2Text: string) => void;
@@ -55,6 +64,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onSelectSection,
   onUpdateChunk,
   onUpdateSectionTitle,
+  onDeleteSection,
+  onAddSection,
+  onBatchCleanEmptySections,
   onToggleIgnoreChunk,
   onOpenJsonlModal,
   onSplitChunk,
@@ -76,6 +88,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   // 3. Modals State
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [isAddSectionModalOpen, setIsAddSectionModalOpen] = useState(false);
 
   // 4. Column 3 State (Focus Editor)
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
@@ -213,6 +226,67 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     setEditingSectionId(null);
   };
 
+  // Map of parent section ID -> child sections
+  const childSectionsMap = useMemo(() => {
+    const map = new Map<string, ParentSection[]>();
+    parentSections.forEach((s) => {
+      if (s.parent_section_id) {
+        const list = map.get(s.parent_section_id) || [];
+        list.push(s);
+        map.set(s.parent_section_id, list);
+      }
+    });
+    return map;
+  }, [parentSections]);
+
+  // Count empty sections (0 child chunks AND 0 child sections)
+  const emptySectionsCount = useMemo(() => {
+    return parentSections.filter((s) => {
+      const hasChunks = s.child_chunk_ids && s.child_chunk_ids.length > 0;
+      const hasChildSections = childSectionsMap.has(s.id);
+      return !hasChunks && !hasChildSections;
+    }).length;
+  }, [parentSections, childSectionsMap]);
+
+  // Handle section deletion with safety confirmation
+  const handleDeleteSectionClick = (sec: ParentSection, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const chunkCount = sec.child_chunk_ids.length;
+    const childSecs = childSectionsMap.get(sec.id) || [];
+    const childSecCount = childSecs.length;
+
+    if (chunkCount === 0 && childSecCount === 0) {
+      // 1) 리프 빈 섹션
+      const ok = window.confirm(`'${sec.title}' 섹션을 삭제하시겠습니까?`);
+      if (ok) {
+        onDeleteSection?.(sec.id, false);
+      }
+    } else if (childSecCount > 0) {
+      // 2) 하위 섹션이 존재하는 상위 섹션
+      const ok = window.confirm(
+        `⚠️ 주의: '${sec.title}' 섹션에는 ${childSecCount}개의 하위 섹션` +
+          (chunkCount > 0 ? ` 및 ${chunkCount}개의 소속 청크` : '') +
+          `이 존재합니다.\n\n` +
+          (chunkCount > 0 ? `• 소속된 ${chunkCount}개의 청크는 함께 영구 삭제됩니다.\n` : '') +
+          `• ${childSecCount}개의 하위 섹션은 상위 계층으로 승격됩니다.\n\n` +
+          `정말 삭제하시겠습니까?`
+      );
+      if (ok) {
+        onDeleteSection?.(sec.id, chunkCount > 0);
+      }
+    } else {
+      // 3) 하위 섹션은 없으나 청크가 포함된 섹션
+      const ok = window.confirm(
+        `⚠️ 경고: '${sec.title}' 섹션에는 ${chunkCount}개의 청크가 포함되어 있습니다.\n\n` +
+          `섹션을 삭제하면 소속된 ${chunkCount}개의 청크도 함께 영구 삭제됩니다.\n\n` +
+          `정말 삭제하시겠습니까?`
+      );
+      if (ok) {
+        onDeleteSection?.(sec.id, true);
+      }
+    }
+  };
+
   // Column 3 real-time field updater
   const handleFieldChange = (field: keyof ChildChunk, value: any) => {
     if (!activeChunk) return;
@@ -298,16 +372,29 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 1열: 문서 계층 구조
               </h2>
             </div>
-            {selectedSectionId && (
-              <button
-                type="button"
-                onClick={() => onSelectSection(null)}
-                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
-                title="섹션 필터 해제"
-              >
-                전체 보기
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {onAddSection && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddSectionModalOpen(true)}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-semibold transition cursor-pointer shadow-2xs"
+                  title="새 섹션 추가"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>섹션 추가</span>
+                </button>
+              )}
+              {selectedSectionId && (
+                <button
+                  type="button"
+                  onClick={() => onSelectSection(null)}
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer px-1 py-0.5"
+                  title="섹션 필터 해제"
+                >
+                  전체 보기
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Search bar */}
@@ -324,10 +411,30 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             </div>
           </div>
 
+          {/* Empty sections cleanup bar */}
+          {emptySectionsCount > 0 && onBatchCleanEmptySections && (
+            <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-200/70 flex items-center justify-between text-[11px] text-amber-800 shrink-0">
+              <div className="flex items-center gap-1.5 truncate">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate">
+                  청크 없는 빈 섹션 <strong>{emptySectionsCount}개</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onBatchCleanEmptySections}
+                className="text-[10px] px-1.5 py-0.5 bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold rounded transition shrink-0 cursor-pointer shadow-2xs"
+                title="청크가 없는 모든 빈 섹션 일괄 삭제"
+              >
+                일괄 정리
+              </button>
+            </div>
+          )}
+
           {/* Quick Guide */}
           <div className="px-3 py-1.5 bg-indigo-50/40 border-b border-indigo-100/60 flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
             <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-            <span className="truncate">더블클릭 또는 연필 아이콘으로 섹션명 인라인 수정</span>
+            <span className="truncate">더블클릭 또는 연필로 수정, 휴지통으로 삭제</span>
           </div>
 
           {/* Section List */}
@@ -415,28 +522,74 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
                           {/* Hover inline edit trigger */}
                           <button
                             type="button"
                             onClick={(e) => startEditSection(sec, e)}
-                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition p-0.5 rounded hover:bg-slate-200/50"
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition p-0.5 rounded hover:bg-slate-200/50 cursor-pointer"
                             title="섹션 제목 수정"
                           >
                             <Edit2 className="w-3 h-3" />
                           </button>
 
+                          {/* Delete section trigger */}
+                          {onDeleteSection && (() => {
+                            const childSecs = childSectionsMap.get(sec.id) || [];
+                            const isLeafEmpty = sec.child_chunk_ids.length === 0 && childSecs.length === 0;
+                            const hasChildSecs = childSecs.length > 0;
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteSectionClick(sec, e)}
+                                className={`transition p-0.5 rounded hover:bg-rose-50 cursor-pointer ${
+                                  isLeafEmpty
+                                    ? 'opacity-80 text-amber-500 hover:text-rose-600'
+                                    : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600'
+                                }`}
+                                title={
+                                  isLeafEmpty
+                                    ? '빈 섹션 삭제'
+                                    : hasChildSecs
+                                    ? `섹션(하위 섹션 ${childSecs.length}개 포함) 삭제`
+                                    : `섹션 및 소속 청크(${sec.child_chunk_ids.length}개) 삭제`
+                                }
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            );
+                          })()}
+
                           {/* Chunk count badge */}
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                              isActive
-                                ? 'bg-indigo-200/80 text-indigo-900'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                            title={`${sec.child_chunk_ids.length}개 자식 청크`}
-                          >
-                            {sec.child_chunk_ids.length}
-                          </span>
+                          {(() => {
+                            const childSecs = childSectionsMap.get(sec.id) || [];
+                            const isLeafEmpty = sec.child_chunk_ids.length === 0 && childSecs.length === 0;
+                            const hasChildSecs = childSecs.length > 0;
+
+                            return (
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                                  isLeafEmpty
+                                    ? 'bg-amber-100 text-amber-700 font-semibold border border-amber-200'
+                                    : hasChildSecs && sec.child_chunk_ids.length === 0
+                                    ? 'bg-slate-100 text-indigo-700 font-medium'
+                                    : isActive
+                                    ? 'bg-indigo-200/80 text-indigo-900'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                                title={
+                                  isLeafEmpty
+                                    ? '청크와 하위 섹션이 없는 빈 섹션'
+                                    : hasChildSecs && sec.child_chunk_ids.length === 0
+                                    ? `청크 0개 (하위 섹션 ${childSecs.length}개 보유)`
+                                    : `${sec.child_chunk_ids.length}개 자식 청크`
+                                }
+                              >
+                                {sec.child_chunk_ids.length}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </>
                     )}
@@ -1213,6 +1366,16 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             clearSelectedChunks();
             setIsMergeModalOpen(false);
           }}
+        />
+      )}
+
+      {/* Add Section Modal */}
+      {onAddSection && (
+        <AddSectionModal
+          isOpen={isAddSectionModalOpen}
+          onClose={() => setIsAddSectionModalOpen(false)}
+          parentSections={parentSections}
+          onAddSection={onAddSection}
         />
       )}
     </div>

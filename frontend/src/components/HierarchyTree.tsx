@@ -110,9 +110,17 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
                 </div>
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                    isActive ? 'bg-indigo-200/70 text-indigo-900' : 'bg-slate-100 text-slate-600'
+                    sec.child_chunk_ids.length === 0
+                      ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200'
+                      : isActive
+                      ? 'bg-indigo-200/70 text-indigo-900'
+                      : 'bg-slate-100 text-slate-600'
                   }`}
-                  title={`${sec.child_chunk_ids.length}개 자식 청크`}
+                  title={
+                    sec.child_chunk_ids.length === 0
+                      ? '청크가 없는 빈 섹션'
+                      : `${sec.child_chunk_ids.length}개 자식 청크`
+                  }
                 >
                   {sec.child_chunk_ids.length}
                 </span>

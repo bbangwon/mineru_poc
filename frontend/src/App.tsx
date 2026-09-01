@@ -20,7 +20,7 @@ import {
   saveEtlResult,
   resetEtlResult,
 } from './api/client';
-import type { PdfItem, EtlResult, ChildChunk, JobStatusResponse } from './types';
+import type { PdfItem, EtlResult, ChildChunk, ParentSection, JobStatusResponse } from './types';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -321,6 +321,167 @@ export function App() {
     showToast(`섹션 제목이 '${trimmed}'(으)로 변경되었습니다.`);
   };
 
+  // 6-1. Delete Section Handler
+  const handleDeleteSection = (sectionId: string, deleteChunks: boolean = false) => {
+    if (!etlData) return;
+    const targetSection = etlData.parent_sections.find((s) => s.id === sectionId);
+    if (!targetSection) return;
+
+    // 1) Handle child chunks
+    let updatedChunks = [...etlData.child_chunks];
+    if (deleteChunks) {
+      // Remove all chunks belonging to this section
+      updatedChunks = updatedChunks.filter((c) => c.parent_id !== sectionId);
+    } else {
+      // Reassign any remaining chunks to another parent if available
+      const fallbackParent =
+        etlData.parent_sections.find((s) => s.id === targetSection.parent_section_id) ||
+        etlData.parent_sections.find((s) => s.id !== sectionId);
+      if (fallbackParent) {
+        updatedChunks = updatedChunks.map((c) => {
+          if (c.parent_id === sectionId) {
+            return {
+              ...c,
+              parent_id: fallbackParent.id,
+              breadcrumbs: fallbackParent.breadcrumbs,
+              is_edited: true,
+            };
+          }
+          return c;
+        });
+      }
+    }
+
+    // 2) Remove section from parent_sections
+    const updatedSections = etlData.parent_sections
+      .filter((s) => s.id !== sectionId)
+      .map((s) => {
+        if (s.parent_section_id === sectionId) {
+          return {
+            ...s,
+            parent_section_id: targetSection.parent_section_id,
+          };
+        }
+        return s;
+      });
+
+    // 3) Recalculate stats
+    const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_sections: updatedSections.length,
+      total_child_chunks: updatedChunks.length,
+      paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
+      table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      total_words: totalWords,
+    };
+
+    if (selectedSectionId === sectionId) {
+      setSelectedSectionId(null);
+    }
+
+    setEtlData({
+      ...etlData,
+      parent_sections: updatedSections,
+      child_chunks: updatedChunks,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    showToast(`'${targetSection.title}' 섹션이 삭제되었습니다.`);
+  };
+
+  // 6-2. Add Section Handler
+  const handleAddSection = (sectionData: {
+    title: string;
+    parentSectionId?: string;
+    level: number;
+  }) => {
+    if (!etlData) return;
+
+    const parentSec = sectionData.parentSectionId
+      ? etlData.parent_sections.find((s) => s.id === sectionData.parentSectionId)
+      : null;
+
+    const breadcrumbs = parentSec
+      ? [...(parentSec.breadcrumbs || [parentSec.title]), sectionData.title]
+      : [sectionData.title];
+
+    const newId = `sec_manual_${Date.now()}`;
+    const newSection: ParentSection = {
+      id: newId,
+      title: sectionData.title,
+      level: sectionData.level,
+      parent_section_id: sectionData.parentSectionId,
+      breadcrumbs: breadcrumbs,
+      child_chunk_ids: [],
+      full_text: '',
+      page_range: parentSec ? parentSec.page_range : [1, 1],
+    };
+
+    const updatedSections = [...etlData.parent_sections, newSection];
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_sections: updatedSections.length,
+    };
+
+    setEtlData({
+      ...etlData,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    setSelectedSectionId(newId);
+    showToast(`새 섹션 '${newSection.title}'이(가) 추가되었습니다.`);
+  };
+
+  // 6-3. Batch Clean Empty Sections Handler (Exclude sections with child sections)
+  const handleBatchCleanEmptySections = () => {
+    if (!etlData) return;
+
+    // 하위 섹션을 보유한 상위 부모 섹션 ID 집합
+    const parentIdSet = new Set(
+      etlData.parent_sections
+        .map((s) => s.parent_section_id)
+        .filter((id): id is string => Boolean(id))
+    );
+
+    // 청크가 없고 AND 하위 섹션도 없는 리프 섹션만 필터링
+    const emptySections = etlData.parent_sections.filter(
+      (s) => s.child_chunk_ids.length === 0 && !parentIdSet.has(s.id)
+    );
+
+    if (emptySections.length === 0) {
+      showToast('정리할 빈 섹션(하위 섹션 및 청크가 모두 없는 섹션)이 없습니다.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `청크와 하위 섹션이 모두 없는 ${emptySections.length}개의 빈 섹션을 일괄 삭제하시겠습니까?\n(하위 섹션을 보유한 상위 섹션은 안전하게 보존됩니다)`
+    );
+    if (!confirmed) return;
+
+    const emptyIdSet = new Set(emptySections.map((s) => s.id));
+    const updatedSections = etlData.parent_sections.filter((s) => !emptyIdSet.has(s.id));
+
+    if (selectedSectionId && emptyIdSet.has(selectedSectionId)) {
+      setSelectedSectionId(null);
+    }
+
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_sections: updatedSections.length,
+    };
+
+    setEtlData({
+      ...etlData,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    showToast(`🧹 ${emptySections.length}개의 빈 섹션이 일괄 삭제되었습니다.`);
+  };
+
   // 7. Toggle Chunk Ignore Status (Column 2 Quick Toggle)
   const handleToggleIgnoreChunk = (chunkId: string) => {
     if (!etlData) return;
@@ -355,17 +516,19 @@ export function App() {
     const words1 = part1Text.trim() ? part1Text.trim().split(/\s+/).length : 0;
     const words2 = part2Text.trim() ? part2Text.trim().split(/\s+/).length : 0;
 
+    const cleanMetadata = target.metadata ? { ...target.metadata } : undefined;
+    if (cleanMetadata) {
+      delete cleanMetadata.is_split;
+      delete cleanMetadata.split_from;
+      delete cleanMetadata.split_part;
+    }
+
     const chunk1: ChildChunk = {
       ...target,
       chunk_id: id1,
       text: part1Text,
       token_estimate: words1,
-      metadata: {
-        ...(target.metadata || {}),
-        is_split: true,
-        split_from: targetChunkId,
-        split_part: 1,
-      },
+      metadata: cleanMetadata ? { ...cleanMetadata } : undefined,
       is_edited: true,
     };
 
@@ -374,12 +537,7 @@ export function App() {
       chunk_id: id2,
       text: part2Text,
       token_estimate: words2,
-      metadata: {
-        ...(target.metadata || {}),
-        is_split: true,
-        split_from: targetChunkId,
-        split_part: 2,
-      },
+      metadata: cleanMetadata ? { ...cleanMetadata } : undefined,
       is_edited: true,
     };
 
@@ -453,18 +611,20 @@ export function App() {
     const words = mergedText.trim() ? mergedText.trim().split(/\s+/).length : 0;
     const minPage = Math.min(...selectedChunks.map((c) => c.page_number));
 
+    const cleanMetadata = firstChunk.metadata ? { ...firstChunk.metadata } : undefined;
+    if (cleanMetadata) {
+      delete cleanMetadata.is_merged;
+      delete cleanMetadata.merged_from;
+      delete cleanMetadata.merged_count;
+    }
+
     const mergedChunk: ChildChunk = {
       ...firstChunk,
       chunk_id: mergedId,
       text: mergedText,
       token_estimate: words,
       page_number: minPage,
-      metadata: {
-        ...(firstChunk.metadata || {}),
-        is_merged: true,
-        merged_from: chunkIds,
-        merged_count: chunkIds.length,
-      },
+      metadata: cleanMetadata,
       is_edited: true,
       is_ignored: false,
     };
@@ -717,6 +877,9 @@ export function App() {
               onSelectSection={setSelectedSectionId}
               onUpdateChunk={handleUpdateChunk}
               onUpdateSectionTitle={handleUpdateSectionTitle}
+              onDeleteSection={handleDeleteSection}
+              onAddSection={handleAddSection}
+              onBatchCleanEmptySections={handleBatchCleanEmptySections}
               onToggleIgnoreChunk={handleToggleIgnoreChunk}
               onOpenJsonlModal={setActiveModalChunk}
               onSplitChunk={handleSplitChunk}
