@@ -1,8 +1,10 @@
-import React from 'react';
-import { Brain, Download, Cpu, Save, RotateCcw, Loader2 } from 'lucide-react';
+import { Download, Cpu, Save, RotateCcw, Loader2, LayoutDashboard, SlidersHorizontal, FileText } from 'lucide-react';
+import type { ActiveTab } from './SidebarNav';
 
 interface HeaderProps {
   hasData: boolean;
+  activeTab?: ActiveTab;
+  activePdf?: string;
   isDirty?: boolean;
   isSaving?: boolean;
   isResetting?: boolean;
@@ -12,6 +14,8 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   hasData,
+  activeTab = 'dashboard',
+  activePdf,
   isDirty = false,
   isSaving = false,
   isResetting = false,
@@ -19,20 +23,34 @@ export const Header: React.FC<HeaderProps> = ({
   onReset,
 }) => {
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+      <div className="w-full px-4 sm:px-6 h-16 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 text-white p-2.5 rounded-xl shadow-md shadow-indigo-100 flex items-center justify-center">
-            <Brain className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900 leading-tight">MinerU RAG ETL Studio</h1>
-              <span className="text-[11px] bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded border border-indigo-200">
-                v2.0 ETL
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${
+              activeTab === 'studio'
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                : 'bg-slate-100 border-slate-200 text-slate-700'
+            }`}>
+              {activeTab === 'studio' ? (
+                <>
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>청크 에디터 스튜디오</span>
+                </>
+              ) : (
+                <>
+                  <LayoutDashboard className="w-3.5 h-3.5 text-slate-600" />
+                  <span>파싱 대시보드</span>
+                </>
+              )}
+            </span>
+
+            {activePdf && (
+              <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-slate-600 font-medium px-2 py-0.5 rounded bg-slate-50 border border-slate-200 max-w-xs truncate" title={activePdf}>
+                <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate">{activePdf}</span>
               </span>
-            </div>
-            <p className="text-xs text-slate-500">부모-자식 계층 청킹 & 원형 보존 표 파싱 파이프라인</p>
+            )}
           </div>
         </div>
 

@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
+import { SidebarNav } from './components/SidebarNav';
+import type { ActiveTab } from './components/SidebarNav';
+import { ChunkStudio } from './components/ChunkStudio';
 import { ControllerBar } from './components/ControllerBar';
 import { StatCards } from './components/StatCards';
 import { HierarchyTree } from './components/HierarchyTree';
@@ -20,6 +23,7 @@ import {
 import type { PdfItem, EtlResult, ChildChunk, JobStatusResponse } from './types';
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [pdfList, setPdfList] = useState<PdfItem[]>([]);
   const [selectedPdf, setSelectedPdf] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
@@ -232,7 +236,7 @@ export function App() {
   };
 
   // 5. Update Single Chunk Handler
-  const handleUpdateChunk = (updatedChunk: ChildChunk) => {
+  const handleUpdateChunk = (updatedChunk: ChildChunk, silent = false) => {
     if (!etlData) return;
 
     // 1) Update child_chunks array
@@ -279,10 +283,59 @@ export function App() {
     });
 
     setIsDirty(true);
-    showToast(`청크(${updatedChunk.chunk_id}) 수정이 적용되었습니다. 상단의 [수정본 저장]을 눌러 파일에 저장하세요.`);
+    if (!silent) {
+      showToast(`청크(${updatedChunk.chunk_id}) 수정이 적용되었습니다.`);
+    }
   };
 
-  // 6. Save ETL Result to Backend & Disk
+  // 6. Inline Section Title Updater (Column 1)
+  const handleUpdateSectionTitle = (sectionId: string, newTitle: string) => {
+    if (!etlData) return;
+    const oldSection = etlData.parent_sections.find((s) => s.id === sectionId);
+    if (!oldSection || oldSection.title === newTitle.trim()) return;
+
+    const trimmed = newTitle.trim();
+    const oldTitle = oldSection.title;
+
+    // 1) Update parent sections and child breadcrumbs
+    const updatedSections = etlData.parent_sections.map((s) => {
+      if (s.id === sectionId) {
+        return { ...s, title: trimmed };
+      }
+      const newBreadcrumbs = s.breadcrumbs.map((b) => (b === oldTitle ? trimmed : b));
+      return { ...s, breadcrumbs: newBreadcrumbs };
+    });
+
+    // 2) Update breadcrumbs in child chunks
+    const updatedChunks = etlData.child_chunks.map((c) => {
+      const newBreadcrumbs = (c.breadcrumbs || []).map((b) => (b === oldTitle ? trimmed : b));
+      return { ...c, breadcrumbs: newBreadcrumbs };
+    });
+
+    setEtlData({
+      ...etlData,
+      parent_sections: updatedSections,
+      child_chunks: updatedChunks,
+    });
+    setIsDirty(true);
+    showToast(`섹션 제목이 '${trimmed}'(으)로 변경되었습니다.`);
+  };
+
+  // 7. Toggle Chunk Ignore Status (Column 2 Quick Toggle)
+  const handleToggleIgnoreChunk = (chunkId: string) => {
+    if (!etlData) return;
+    const chunk = etlData.child_chunks.find((c) => c.chunk_id === chunkId);
+    if (!chunk) return;
+
+    const updatedChunk: ChildChunk = {
+      ...chunk,
+      is_ignored: !chunk.is_ignored,
+      is_edited: true,
+    };
+    handleUpdateChunk(updatedChunk, false);
+  };
+
+  // 8. Save ETL Result to Backend & Disk
   const handleSaveEtl = async () => {
     if (!etlData) return;
     setIsSaving(true);
@@ -298,7 +351,7 @@ export function App() {
     }
   };
 
-  // 7. Reset ETL Result to Original
+  // 9. Reset ETL Result to Original
   const handleResetEtl = async () => {
     const confirmed = window.confirm('모든 수정 내용을 폐기하고 원본 파싱 결과로 복원하시겠습니까?');
     if (!confirmed) return;
@@ -318,8 +371,12 @@ export function App() {
     }
   };
 
+  const totalChunksCount = etlData?.child_chunks.length || 0;
+  const editedChunksCount = etlData?.child_chunks.filter((c) => c.is_edited).length || 0;
+  const ignoredChunksCount = etlData?.child_chunks.filter((c) => c.is_ignored).length || 0;
+
   return (
-    <div className="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans">
+    <div className="bg-slate-50 text-slate-800 h-screen flex font-sans overflow-hidden">
       {/* Toast Notification */}
       {toast && (
         <div
@@ -333,73 +390,108 @@ export function App() {
         </div>
       )}
 
-      {/* Top Navbar */}
-      <Header
-        hasData={!!(etlData && etlData.child_chunks.length > 0)}
+      {/* Left Slim Navigation Sidebar */}
+      <SidebarNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        totalChunks={totalChunksCount}
+        editedChunksCount={editedChunksCount}
+        ignoredChunksCount={ignoredChunksCount}
         isDirty={isDirty}
-        isSaving={isSaving}
-        isResetting={isResetting}
-        onSave={handleSaveEtl}
-        onReset={handleResetEtl}
+        activePdf={selectedPdf}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* PDF Controller Bar */}
-        <ControllerBar
-          pdfList={pdfList}
-          selectedPdf={selectedPdf}
-          onSelectPdf={handleSelectPdf}
-          onUploadPdf={handleUploadPdf}
-          isUploading={isUploading}
-          engine={engine}
-          setEngine={setEngine}
-          method={method}
-          setMethod={setMethod}
-          formula={formula}
-          setFormula={setFormula}
-          strategy={strategy}
-          setStrategy={setStrategy}
-          allPages={allPages}
-          setAllPages={setAllPages}
-          startPage={startPage}
-          setStartPage={setStartPage}
-          endPage={endPage}
-          setEndPage={setEndPage}
-          onRunEtl={handleRunEtl}
-          isParsing={isParsing}
-          activeJob={activeJob}
+      {/* Right Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        {/* Top Navbar */}
+        <Header
+          hasData={!!(etlData && etlData.child_chunks.length > 0)}
+          activeTab={activeTab}
+          activePdf={selectedPdf}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          isResetting={isResetting}
+          onSave={handleSaveEtl}
+          onReset={handleResetEtl}
         />
 
-        {/* Statistics Scoreboard */}
-        <StatCards stats={etlData?.stats} />
+        {activeTab === 'dashboard' ? (
+          /* Dashboard Mode: Scrollable Overview & Parser */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              {/* PDF Controller Bar */}
+              <ControllerBar
+                pdfList={pdfList}
+                selectedPdf={selectedPdf}
+                onSelectPdf={handleSelectPdf}
+                onUploadPdf={handleUploadPdf}
+                isUploading={isUploading}
+                engine={engine}
+                setEngine={setEngine}
+                method={method}
+                setMethod={setMethod}
+                formula={formula}
+                setFormula={setFormula}
+                strategy={strategy}
+                setStrategy={setStrategy}
+                allPages={allPages}
+                setAllPages={setAllPages}
+                startPage={startPage}
+                setStartPage={setStartPage}
+                endPage={endPage}
+                setEndPage={setEndPage}
+                onRunEtl={handleRunEtl}
+                isParsing={isParsing}
+                activeJob={activeJob}
+              />
 
-        {/* Hierarchy Tree + Chunk Explorer Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Heading Hierarchy Tree */}
-          <div className="lg:col-span-4">
-            <HierarchyTree
-              sections={etlData?.parent_sections || []}
+              {/* Statistics Scoreboard */}
+              <StatCards stats={etlData?.stats} />
+
+              {/* Hierarchy Tree + Chunk Explorer Workspace */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left: Heading Hierarchy Tree */}
+                <div className="lg:col-span-4">
+                  <HierarchyTree
+                    sections={etlData?.parent_sections || []}
+                    selectedSectionId={selectedSectionId}
+                    onSelectSection={setSelectedSectionId}
+                    isLoading={isLoadingEtl}
+                  />
+                </div>
+
+                {/* Right: Chunk Viewer & Inspector */}
+                <div className="lg:col-span-8">
+                  <ChunkExplorer
+                    chunks={etlData?.child_chunks || []}
+                    parentSections={etlData?.parent_sections || []}
+                    selectedSectionId={selectedSectionId}
+                    onClearSectionFilter={() => setSelectedSectionId(null)}
+                    onOpenJsonlModal={setActiveModalChunk}
+                    onEditChunk={setEditingChunk}
+                    isLoading={isLoadingEtl}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Chunk Studio Mode: 3-Column Focus IDE Workspace */
+          <div className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col min-h-0">
+            <ChunkStudio
+              parentSections={etlData?.parent_sections || []}
+              childChunks={etlData?.child_chunks || []}
               selectedSectionId={selectedSectionId}
               onSelectSection={setSelectedSectionId}
-              isLoading={isLoadingEtl}
-            />
-          </div>
-
-          {/* Right: Chunk Viewer & Inspector */}
-          <div className="lg:col-span-8">
-            <ChunkExplorer
-              chunks={etlData?.child_chunks || []}
-              parentSections={etlData?.parent_sections || []}
-              selectedSectionId={selectedSectionId}
-              onClearSectionFilter={() => setSelectedSectionId(null)}
+              onUpdateChunk={handleUpdateChunk}
+              onUpdateSectionTitle={handleUpdateSectionTitle}
+              onToggleIgnoreChunk={handleToggleIgnoreChunk}
               onOpenJsonlModal={setActiveModalChunk}
-              onEditChunk={setEditingChunk}
               isLoading={isLoadingEtl}
             />
           </div>
-        </div>
-      </main>
+        )}
+      </div>
 
       {/* JSONL Record Modal */}
       <JsonlModal
@@ -408,7 +500,7 @@ export function App() {
         onClose={() => setActiveModalChunk(null)}
       />
 
-      {/* Chunk Edit Modal */}
+      {/* Chunk Edit Modal (Dashboard compatible) */}
       <ChunkEditModal
         chunk={editingChunk}
         parentSections={etlData?.parent_sections || []}

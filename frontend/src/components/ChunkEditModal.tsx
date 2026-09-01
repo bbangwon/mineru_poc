@@ -15,21 +15,20 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   onClose,
   onSave,
 }) => {
-  if (!chunk) return null;
-
-  const [text, setText] = useState(chunk.text || '');
-  const [parentId, setParentId] = useState(chunk.parent_id || '');
-  const [isIgnored, setIsIgnored] = useState(Boolean(chunk.is_ignored));
+  const [text, setText] = useState(chunk?.text || '');
+  const [parentId, setParentId] = useState(chunk?.parent_id || '');
+  const [isIgnored, setIsIgnored] = useState(Boolean(chunk?.is_ignored));
   const [activeTab, setActiveTab] = useState<'text' | 'raw_html'>('text');
 
   // Table specific state
-  const isTable = chunk.chunk_type === 'table';
-  const isArticle = chunk.chunk_type === 'article';
-  const [rawHtml, setRawHtml] = useState(chunk.raw_html || '');
-  const [tableCaption, setTableCaption] = useState(chunk.table_caption || '');
-  const [tableFootnote, setTableFootnote] = useState(chunk.table_footnote || '');
+  const isTable = chunk?.chunk_type === 'table';
+  const isArticle = chunk?.chunk_type === 'article';
+  const [rawHtml, setRawHtml] = useState(chunk?.raw_html || '');
+  const [tableCaption, setTableCaption] = useState(chunk?.table_caption || '');
+  const [tableFootnote, setTableFootnote] = useState(chunk?.table_footnote || '');
 
   useEffect(() => {
+    if (!chunk) return;
     setText(chunk.text || '');
     setParentId(chunk.parent_id || '');
     setIsIgnored(Boolean(chunk.is_ignored));
@@ -38,6 +37,8 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
     setTableFootnote(chunk.table_footnote || '');
     setActiveTab('text');
   }, [chunk]);
+
+  if (!chunk) return null;
 
   // Real-time word / token estimate
   const currentTextToCount = activeTab === 'text' ? text : rawHtml;
