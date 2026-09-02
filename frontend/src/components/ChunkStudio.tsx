@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Network,
   BookOpen,
@@ -116,6 +116,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [editorTab, setEditorTab] = useState<'text' | 'raw_html' | 'preview'>('text');
   const [newMetaKey, setNewMetaKey] = useState('');
   const [newMetaVal, setNewMetaVal] = useState('');
+  const [pageStartInput, setPageStartInput] = useState<string>('');
+  const [pageEndInput, setPageEndInput] = useState<string>('');
 
   // Parent Section Quick Lookup Map
   const parentMap = useMemo(() => {
@@ -246,6 +248,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     const pid = activeChunk.parent_chunk_id || activeChunk.parent_id;
     return (parentChunks || []).find((p) => (p.parent_chunk_id || p.id) === pid) || null;
   }, [activeChunk, parentChunks]);
+
+  // Synchronize Column 3 page inputs with active chunk
+  useEffect(() => {
+    if (activeChunk) {
+      setPageStartInput(String(activeChunk.page_number || 1));
+      setPageEndInput(activeChunk.page_end ? String(activeChunk.page_end) : '');
+    }
+  }, [activeChunk?.chunk_id, activeChunk?.page_number, activeChunk?.page_end]);
 
   // Column 2 Parent Groups (Parent Chunk 단위 그룹화)
   const parentGroups = useMemo(() => {
@@ -1374,18 +1384,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   </div>
                 )}
                 
-                {/* 1. Parent Section & Exclude Setting Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                {/* 1. Parent Section, Page Range & Exclude Setting Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                   {/* Parent Section Reassign */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
-                        소속 섹션 재할당 (Parent & Child 연쇄 동기화)
+                        소속 섹션 재할당
                       </span>
                       {activeChunk.parent_chunk_id && (
                         <span className="font-mono text-[10px] font-normal text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">
-                          Parent: {activeChunk.parent_chunk_id}
+                          {activeChunk.parent_chunk_id}
                         </span>
                       )}
                     </label>
@@ -1408,6 +1418,93 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Page Number & Range Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                        페이지 번호 (시작 ~ 끝)
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400 font-semibold">
+                        {formatChunkPageFull(activeChunk)}
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1">
+                        <input
+                          type="number"
+                          min="1"
+                          value={pageStartInput}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPageStartInput(val);
+                            const num = parseInt(val, 10);
+                            if (!isNaN(num) && num >= 1) {
+                              const currentEnd = activeChunk.page_end;
+                              const updated: ChildChunk = {
+                                ...activeChunk,
+                                page_number: num,
+                                page_end: currentEnd && currentEnd >= num ? currentEnd : undefined,
+                                is_edited: true,
+                              };
+                              onUpdateChunk(updated, true);
+                            }
+                          }}
+                          onBlur={() => {
+                            const num = parseInt(pageStartInput, 10);
+                            if (isNaN(num) || num < 1) {
+                              setPageStartInput(String(activeChunk.page_number || 1));
+                            }
+                          }}
+                          placeholder="시작"
+                          className="w-full text-xs font-mono font-medium bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          title="시작 페이지 번호"
+                        />
+                      </div>
+                      <span className="text-slate-400 text-xs font-bold shrink-0">~</span>
+                      <div className="flex-1">
+                        <input
+                          type="number"
+                          min={parseInt(pageStartInput, 10) || 1}
+                          value={pageEndInput}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPageEndInput(val);
+                            const num = parseInt(val, 10);
+                            const startNum = activeChunk.page_number || 1;
+                            if (val.trim() === '') {
+                              const updated: ChildChunk = {
+                                ...activeChunk,
+                                page_end: undefined,
+                                is_edited: true,
+                              };
+                              onUpdateChunk(updated, true);
+                            } else if (!isNaN(num) && num >= startNum) {
+                              const updated: ChildChunk = {
+                                ...activeChunk,
+                                page_end: num,
+                                is_edited: true,
+                              };
+                              onUpdateChunk(updated, true);
+                            }
+                          }}
+                          onBlur={() => {
+                            const num = parseInt(pageEndInput, 10);
+                            const startNum = activeChunk.page_number || 1;
+                            if (!pageEndInput.trim()) {
+                              // OK: single page
+                            } else if (isNaN(num) || num < startNum) {
+                              setPageEndInput(activeChunk.page_end ? String(activeChunk.page_end) : '');
+                            }
+                          }}
+                          placeholder="끝 (선택)"
+                          className="w-full text-xs font-mono font-medium bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          title="종료 페이지 번호 (선택사항, 단일 페이지는 비움)"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Embedding Exclude Toggle */}
