@@ -122,7 +122,12 @@ export function App() {
     setIsLoadingEtl(true);
     try {
       const data = await getEtlSample();
-      setEtlData(normalizeEtlData(data));
+      const normalized = normalizeEtlData(data);
+      setEtlData(normalized);
+      const firstSec = normalized.sections?.find((s) => (s.child_chunk_ids?.length || 0) > 0) || normalized.sections?.[0];
+      if (firstSec) {
+        setSelectedSectionId(firstSec.id);
+      }
       if (data.active_pdf) {
         setSelectedPdf(data.active_pdf);
       }
@@ -173,8 +178,10 @@ export function App() {
         if (job.status === 'completed') {
           setIsParsing(false);
           if (job.result) {
-            setEtlData(normalizeEtlData(job.result));
-            setSelectedSectionId(null);
+            const normalized = normalizeEtlData(job.result);
+            setEtlData(normalized);
+            const firstSec = normalized.sections?.find((s) => (s.child_chunk_ids?.length || 0) > 0) || normalized.sections?.[0];
+            setSelectedSectionId(firstSec?.id || null);
             showToast(
               `🎉 백그라운드 ETL 완료! (소요: ${job.elapsed_time || 0}초, 청크: ${job.result.stats.total_child_chunks}개)`
             );
@@ -1150,9 +1157,11 @@ export function App() {
     setIsResetting(true);
     try {
       const original = await resetEtlResult(strategy);
-      setEtlData(normalizeEtlData(original));
+      const normalized = normalizeEtlData(original);
+      setEtlData(normalized);
       setIsDirty(false);
-      setSelectedSectionId(null);
+      const firstSec = normalized.sections?.find((s) => (s.child_chunk_ids?.length || 0) > 0) || normalized.sections?.[0];
+      setSelectedSectionId(firstSec?.id || null);
       showToast('🔄 원본 파싱 데이터로 초기화되었습니다.');
     } catch (err: any) {
       console.error('Reset error:', err);
@@ -1246,6 +1255,7 @@ export function App() {
                 <div className="lg:col-span-4">
                   <HierarchyTree
                     sections={etlData?.sections || etlData?.parent_sections || []}
+                    parentChunks={etlData?.parent_chunks || []}
                     selectedSectionId={selectedSectionId}
                     onSelectSection={setSelectedSectionId}
                     isLoading={isLoadingEtl}
@@ -1306,8 +1316,10 @@ export function App() {
       <ChunkEditModal
         chunk={editingChunk}
         parentSections={etlData?.sections || etlData?.parent_sections || []}
+        parentChunks={etlData?.parent_chunks || []}
         onClose={() => setEditingChunk(null)}
         onSave={handleUpdateChunk}
+        onReassignParentSection={handleReassignParentSection}
       />
     </div>
   );

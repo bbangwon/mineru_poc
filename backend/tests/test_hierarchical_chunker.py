@@ -276,7 +276,95 @@ class TestHierarchicalChunker(unittest.TestCase):
         self.assertEqual(reindexed["child_chunks"][1]["page_number"], 5)
         self.assertEqual(reindexed["child_chunks"][1]["chunk_id"], f"{reindexed['doc_id']}_c002")
 
+    def test_e2e_full_lifecycle_flow(self):
+        """
+        Phase 3 E2E 테스트:
+        3단계 청킹 생성 -> 수동 분할 -> 수동 병합 & Auto-prune -> 상위 섹션 재지정 (Cascading Sync) -> Re-index -> JSONL 내보내기
+        """
+        chunker = HierarchicalChunker(doc_id="e2e_doc")
+        sample_content = [
+            {"type": "text", "text": "제1장 총칙", "text_level": 1, "page_idx": 0},
+            {"type": "text", "text": "제1조(목적) ① 본 규칙은 근로자의 권익을 보호하고 회사의 건전한 발전을 목적으로 한다.\n② 근로조건은 법정 기준 이상이어야 한다.", "page_idx": 0},
+            {"type": "table", "table_body": "<table><tr><th>직급</th><th>기본급</th></tr><tr><td>사원</td><td>250만원</td></tr></table>", "table_caption": "기본급표", "page_idx": 0},
+            {"type": "text", "text": "제2장 복무", "text_level": 1, "page_idx": 1},
+            {"type": "text", "text": "제2조(성실의무) ① 근로자는 직무를 성실히 수행해야 한다.", "page_idx": 1},
+        ]
+
+        # 1. 3단계 청킹 생성
+        etl_res = chunker.chunk_content_list(sample_content, doc_title="취업규칙", strategy="legal")
+        # sections includes root doc section (level 0) + 제1장 (level 1) + 제2장 (level 1) -> 3 sections
+        self.assertEqual(len(etl_res["sections"]), 3)
+        self.assertGreaterEqual(len(etl_res["parent_chunks"]), 2)
+        self.assertGreaterEqual(len(etl_res["child_chunks"]), 3)
+
+        # 표 원자성 검증
+        table_chunk = next(c for c in etl_res["child_chunks"] if c["chunk_type"] == "table")
+        self.assertTrue(table_chunk["is_atomic_table"])
+        self.assertIn("기본급표", table_chunk["text"])
+        self.assertIn("<table>", table_chunk["raw_html"])
+
+        # 2. Split Chunk 시뮬레이션: 첫 번째 Child 분할
+        c0 = etl_res["child_chunks"][0]
+        p0_id = c0["parent_chunk_id"]
+        c0_split_1 = {**c0, "chunk_id": f"{c0['chunk_id']}_1", "text": "제1조(목적) ① 본 규칙은 근로자의 권익을 보호하고"}
+        c0_split_2 = {**c0, "chunk_id": f"{c0['chunk_id']}_2", "text": "회사의 건전한 발전을 목적으로 한다."}
+        etl_res["child_chunks"] = [c0_split_1, c0_split_2] + etl_res["child_chunks"][1:]
+
+        # 상위 Parent의 child_chunk_ids 갱신
+        p0 = next(p for p in etl_res["parent_chunks"] if (p["parent_chunk_id"] == p0_id or p.get("id") == p0_id))
+        p0["child_chunk_ids"] = [c0_split_1["chunk_id"], c0_split_2["chunk_id"]] + [cid for cid in p0["child_chunk_ids"] if cid != c0["chunk_id"]]
+
+        self.assertIn(c0_split_1["chunk_id"], p0["child_chunk_ids"])
+        self.assertIn(c0_split_2["chunk_id"], p0["child_chunk_ids"])
+
+        # 3. Merge Chunk 시뮬레이션: c0_split_1과 c0_split_2를 다시 병합
+        merged_c = {**c0_split_1, "chunk_id": c0["chunk_id"], "text": "제1조(목적) ① 본 규칙은 근로자의 권익을 보호하고 회사의 건전한 발전을 목적으로 한다."}
+        etl_res["child_chunks"] = [merged_c] + etl_res["child_chunks"][2:]
+        p0["child_chunk_ids"] = [merged_c["chunk_id"]] + [cid for cid in p0["child_chunk_ids"] if cid not in (c0_split_1["chunk_id"], c0_split_2["chunk_id"])]
+
+        # 4. 상위 섹션 재지정 시뮬레이션 (Reassign Parent Section)
+        # 제1장의 p0를 제2장 섹션(sec2)으로 이동
+        sec1 = etl_res["sections"][1]
+        sec2 = etl_res["sections"][2]
+        target_pid = p0["parent_chunk_id"]
+        new_sec_id = sec2["id"]
+
+        # Parent 변경
+        p0["section_id"] = new_sec_id
+        # 섹션 링크 갱신
+        sec1["parent_chunk_ids"] = [pid for pid in sec1["parent_chunk_ids"] if pid != target_pid]
+        sec2["parent_chunk_ids"].append(target_pid)
+
+        # 하위 Child 연쇄 갱신 (Cascading Sync)
+        for c in etl_res["child_chunks"]:
+            if c["parent_chunk_id"] == target_pid:
+                c["section_id"] = new_sec_id
+                c["breadcrumbs"] = list(sec2["breadcrumbs"])
+
+        for c in etl_res["child_chunks"]:
+            if c["parent_chunk_id"] == target_pid:
+                self.assertEqual(c["section_id"], new_sec_id)
+                self.assertEqual(c["breadcrumbs"], sec2["breadcrumbs"])
+
+        # 5. Re-index 시뮬레이션
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+        self.assertTrue(reindexed["sections"][0]["id"].endswith("_s00"))
+        self.assertTrue(reindexed["parent_chunks"][0]["parent_chunk_id"].endswith("_p001"))
+        self.assertTrue(reindexed["child_chunks"][0]["chunk_id"].endswith("_c001"))
+
+        # 6. JSONL 출력 검증
+        jsonl_str = chunker.export_to_jsonl(reindexed)
+        lines = [line.strip() for line in jsonl_str.split("\n") if line.strip()]
+        self.assertEqual(len(lines), len(reindexed["child_chunks"]))
+
+        for line in lines:
+            record = json.loads(line)
+            self.assertIn("parent_context_text", record)
+            self.assertIn("breadcrumbs_str", record)
+            self.assertGreater(len(record["parent_context_text"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

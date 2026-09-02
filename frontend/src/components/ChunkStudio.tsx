@@ -240,6 +240,78 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return childChunks.find((c) => c.chunk_id === activeChunkId) || null;
   }, [childChunks, activeChunkId]);
 
+  // Active Parent Chunk for Column 3 and context
+  const activeParentChunk = useMemo(() => {
+    if (!activeChunk) return null;
+    const pid = activeChunk.parent_chunk_id || activeChunk.parent_id;
+    return (parentChunks || []).find((p) => (p.parent_chunk_id || p.id) === pid) || null;
+  }, [activeChunk, parentChunks]);
+
+  // Column 2 Parent Groups (Parent Chunk 단위 그룹화)
+  const parentGroups = useMemo(() => {
+    const childByParent = new Map<string, ChildChunk[]>();
+    for (const c of filteredChunks) {
+      const pid = c.parent_chunk_id || c.parent_id || 'unassigned';
+      const list = childByParent.get(pid) || [];
+      list.push(c);
+      childByParent.set(pid, list);
+    }
+
+    const groups: { parent: ParentChunk; children: ChildChunk[] }[] = [];
+    const processedPids = new Set<string>();
+
+    (parentChunks || []).forEach((p) => {
+      const pid = p.parent_chunk_id || p.id || '';
+      const children = childByParent.get(pid);
+      if (children && children.length > 0) {
+        groups.push({ parent: p, children });
+        processedPids.add(pid);
+      }
+    });
+
+    childByParent.forEach((children, pid) => {
+      if (!processedPids.has(pid)) {
+        const first = children[0];
+        const fallbackParent: ParentChunk = {
+          parent_chunk_id: pid,
+          section_id: first.section_id || first.parent_id || '',
+          title: '독립 / 미분류 그룹',
+          text: children.map((c) => c.text).join('\n\n'),
+          token_estimate: children.reduce((acc, c) => acc + (c.token_estimate || 0), 0),
+          child_chunk_ids: children.map((c) => c.chunk_id),
+          page_range: [
+            Math.min(...children.map((c) => c.page_number || 1)),
+            Math.max(...children.map((c) => c.page_end || c.page_number || 1)),
+          ],
+        };
+        groups.push({ parent: fallbackParent, children });
+      }
+    });
+
+    return groups;
+  }, [filteredChunks, parentChunks]);
+
+  // Display limit for smooth rendering of 1000+ chunks in Column 2
+  const [displayLimit, setDisplayLimit] = useState(50);
+
+  const { visibleGroups, displayedChildCount } = useMemo(() => {
+    let count = 0;
+    const groups: { parent: ParentChunk; children: ChildChunk[] }[] = [];
+
+    for (const g of parentGroups) {
+      if (count >= displayLimit) break;
+      const remaining = displayLimit - count;
+      const slicedChildren = g.children.slice(0, remaining);
+      groups.push({
+        parent: g.parent,
+        children: slicedChildren,
+      });
+      count += slicedChildren.length;
+    }
+
+    return { visibleGroups: groups, displayedChildCount: count };
+  }, [parentGroups, displayLimit]);
+
   // Handle section title inline editing
   const startEditSection = (sec: ParentSection, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -594,33 +666,53 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             );
                           })()}
 
-                          {/* Chunk count badge */}
+                          {/* 1열: Parent and Child count dual badges */}
                           {(() => {
+                            const pCount =
+                              sec.parent_chunk_ids && sec.parent_chunk_ids.length > 0
+                                ? sec.parent_chunk_ids.length
+                                : (parentChunks || []).filter((p) => p.section_id === sec.id).length;
+                            const cCount =
+                              sec.child_chunk_ids && sec.child_chunk_ids.length > 0
+                                ? sec.child_chunk_ids.length
+                                : childChunks.filter((c) => c.section_id === sec.id || c.parent_id === sec.id).length;
                             const childSecs = childSectionsMap.get(sec.id) || [];
-                            const isLeafEmpty = sec.child_chunk_ids.length === 0 && childSecs.length === 0;
-                            const hasChildSecs = childSecs.length > 0;
+                            const isLeafEmpty = pCount === 0 && cCount === 0 && childSecs.length === 0;
 
                             return (
-                              <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                                  isLeafEmpty
-                                    ? 'bg-amber-100 text-amber-700 font-semibold border border-amber-200'
-                                    : hasChildSecs && sec.child_chunk_ids.length === 0
-                                    ? 'bg-slate-100 text-indigo-700 font-medium'
-                                    : isActive
-                                    ? 'bg-indigo-200/80 text-indigo-900'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
-                                title={
-                                  isLeafEmpty
-                                    ? '청크와 하위 섹션이 없는 빈 섹션'
-                                    : hasChildSecs && sec.child_chunk_ids.length === 0
-                                    ? `청크 0개 (하위 섹션 ${childSecs.length}개 보유)`
-                                    : `${sec.child_chunk_ids.length}개 자식 청크`
-                                }
-                              >
-                                {sec.child_chunk_ids.length}
-                              </span>
+                              <div className="flex items-center gap-1 font-mono text-[10px]">
+                                {isLeafEmpty ? (
+                                  <span
+                                    className="bg-amber-100 text-amber-800 font-semibold border border-amber-200 px-1.5 py-0.5 rounded"
+                                    title="청크와 하위 섹션이 없는 빈 섹션"
+                                  >
+                                    빈 섹션
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded font-semibold ${
+                                        isActive
+                                          ? 'bg-indigo-200 text-indigo-950 font-bold'
+                                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200/70'
+                                      }`}
+                                      title={`소속 Parent 청크: ${pCount}개`}
+                                    >
+                                      P {pCount}
+                                    </span>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded ${
+                                        isActive
+                                          ? 'bg-indigo-300/70 text-indigo-950 font-bold'
+                                          : 'bg-slate-100 text-slate-600'
+                                      }`}
+                                      title={`소속 Child 청크: ${cCount}개`}
+                                    >
+                                      C {cCount}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             );
                           })()}
                         </div>
@@ -874,154 +966,259 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             </div>
           )}
 
-          {/* Chunk Card List */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
+          {/* Chunk Card List grouped by Parent Chunk Container Boxes */}
+          <div className="flex-1 p-3 overflow-y-auto space-y-3">
             {isLoading ? (
               <div className="text-slate-400 text-center py-20 text-xs">청크 불러오는 중...</div>
-            ) : filteredChunks.length === 0 ? (
+            ) : visibleGroups.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300">
                 <Layers className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
                 <p className="text-xs text-slate-400">조건에 맞는 청크가 없습니다.</p>
               </div>
             ) : (
-              filteredChunks.map((chunk) => {
-                const isSelected = activeChunkId === chunk.chunk_id;
-                const isChecked = selectedChunkIds.has(chunk.chunk_id);
-                const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
-                const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
-                const isIgnored = Boolean(chunk.is_ignored);
-                const isEdited = Boolean(chunk.is_edited);
-                const parent = parentMap.get(chunk.section_id || chunk.parent_id || '');
-
-                const cWords = chunk.token_estimate || (chunk.text ? estimateKoreanTokens(chunk.text) : 0);
-                const isCEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
-                const isCOver = !isTable && cWords > 512;
-                const isCUnder = !isTable && !isCEmpty && cWords > 0 && cWords < 20;
+              visibleGroups.map((group) => {
+                const parent = group.parent;
+                const pid = parent.parent_chunk_id || parent.id || '';
+                const pWords = parent.token_estimate || 0;
+                const isParentOver = pWords > 2048;
+                const parentSec = parentMap.get(parent.section_id);
 
                 return (
                   <div
-                    key={chunk.chunk_id}
-                    onClick={() => setSelectedChunkId(chunk.chunk_id)}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
-                      isChecked
-                        ? 'bg-indigo-50/50 border-indigo-400 ring-2 ring-indigo-400/30 shadow-xs'
-                        : isSelected
-                        ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
-                        : isIgnored
-                        ? 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-100 hover:bg-white'
-                        : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
-                    }`}
+                    key={pid}
+                    className="rounded-xl border border-slate-200/90 bg-slate-100/70 p-2.5 space-y-2 shadow-2xs"
                   >
-                    {/* Top Row: Checkbox, Type, Page, ID, Status & Linter Badges */}
-                    <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-100">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Checkbox for merge selection */}
-                        <button
-                          type="button"
-                          onClick={(e) => toggleSelectChunk(chunk.chunk_id, e)}
-                          className="text-slate-400 hover:text-indigo-600 transition p-0.5 rounded cursor-pointer shrink-0"
-                          title={isChecked ? '선택 해제' : '병합 대상으로 선택'}
-                        >
-                          {isChecked ? (
-                            <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
-                          ) : (
-                            <Square className="w-3.5 h-3.5 text-slate-300 hover:text-slate-500" />
-                          )}
-                        </button>
-
-                        {isTable ? (
-                          <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Table2 className="w-3 h-3" />
-                            표
-                          </span>
-                        ) : isArticle ? (
-                          <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Scale className="w-3 h-3" />
-                            조문
-                          </span>
-                        ) : (
-                          <span className="bg-slate-100 text-slate-700 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <AlignLeft className="w-3 h-3 text-slate-400" />
-                            문단
+                    {/* Parent Container Box Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                        <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shadow-2xs">
+                          Parent: {pid}
+                        </span>
+                        {parent.title && (
+                          <span className="text-xs font-bold text-slate-800 truncate max-w-[170px]" title={parent.title}>
+                            {parent.title}
                           </span>
                         )}
-
-                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
-                          {chunk.chunk_id}
-                        </span>
-
                         <span className="text-[10px] text-slate-400 font-mono">
-                          {formatChunkPage(chunk)}
+                          p.{parent.page_range?.[0] || 1}{parent.page_range?.[1] && parent.page_range[1] > (parent.page_range[0] || 1) ? `~${parent.page_range[1]}` : ''}
                         </span>
-
-                        {isEdited && (
-                          <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-amber-500" />
-                            수정됨
-                          </span>
-                        )}
-
-                        {isIgnored && (
-                          <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                            <EyeOff className="w-2.5 h-2.5 text-rose-500" />
-                            제외됨
-                          </span>
-                        )}
-
-                        {/* Linter Badges */}
-                        {isCEmpty ? (
-                          <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
-                            빈 청크
-                          </span>
-                        ) : isCOver ? (
-                          <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
-                            512+ tokens
-                          </span>
-                        ) : isCUnder ? (
-                          <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                            <Info className="w-2.5 h-2.5 text-sky-600" />
-                            &lt;20 tokens
-                          </span>
-                        ) : null}
+                        <span className="text-[10px] text-slate-500 font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                          자식 {group.children.length}개
+                        </span>
                       </div>
 
-                      {/* Quick Ignore Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleIgnoreChunk(chunk.chunk_id);
-                        }}
-                        className={`p-1 rounded transition cursor-pointer ${
-                          isIgnored
-                            ? 'text-rose-600 hover:bg-rose-100 bg-rose-50'
-                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                        }`}
-                        title={isIgnored ? '임베딩 포함으로 변경' : '임베딩 제외로 변경'}
-                      >
-                        {isIgnored ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Fast Section Reassign Dropdown */}
+                        <div
+                          className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 shadow-2xs"
+                          title="이 Parent 및 소속 Child 청크의 상위 섹션 빠른 재지정"
+                        >
+                          <FolderTree className="w-3 h-3 text-indigo-600 shrink-0" />
+                          <select
+                            value={parent.section_id}
+                            onChange={(e) => {
+                              const newSecId = e.target.value;
+                              if (onReassignParentSection && newSecId !== parent.section_id) {
+                                onReassignParentSection(pid, newSecId);
+                              }
+                            }}
+                            className="text-[11px] font-medium text-slate-700 bg-transparent focus:outline-hidden cursor-pointer max-w-[130px] truncate"
+                          >
+                            {parentSections.map((sec) => (
+                              <option key={sec.id} value={sec.id}>
+                                {sec.title} (L{sec.level})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Parent Token Estimate Badge */}
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${
+                            isParentOver
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : 'bg-white text-slate-600 border border-slate-200'
+                          }`}
+                          title={`Parent 누적 토큰: ~${pWords} tokens (권장: 2048 이하)`}
+                        >
+                          ~{pWords} tok
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Text Snippet (Line Clamped) */}
-                    <div className="pt-2 text-slate-700 leading-snug line-clamp-2 text-[11px]">
-                      {isTable && chunk.table_caption
-                        ? `[표] ${chunk.table_caption}`
-                        : chunk.text || (chunk.raw_html ? 'HTML 표 데이터' : '(빈 청크)')}
-                    </div>
+                    {/* Child Cards inside Parent Container */}
+                    <div className="space-y-2">
+                      {group.children.map((chunk) => {
+                        const isSelected = activeChunkId === chunk.chunk_id;
+                        const isChecked = selectedChunkIds.has(chunk.chunk_id);
+                        const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+                        const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
+                        const isIgnored = Boolean(chunk.is_ignored);
+                        const isEdited = Boolean(chunk.is_edited);
 
-                    {/* Footer Row: Parent Section & Token count */}
-                    <div className="pt-2 mt-1.5 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                      <span className="truncate max-w-[170px]" title={parent?.title || chunk.section_id || chunk.parent_id}>
-                        {parent?.title || chunk.section_id || chunk.parent_id}
-                      </span>
-                      <span>~{cWords} tokens</span>
+                        const cWords = chunk.token_estimate || (chunk.text ? estimateKoreanTokens(chunk.text) : 0);
+                        const isCEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
+                        const isCOver = !isTable && cWords > 512;
+                        const isCUnder = !isTable && !isCEmpty && cWords > 0 && cWords < 20;
+
+                        return (
+                          <div
+                            key={chunk.chunk_id}
+                            onClick={() => setSelectedChunkId(chunk.chunk_id)}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
+                              isChecked
+                                ? 'bg-indigo-50/50 border-indigo-400 ring-2 ring-indigo-400/30 shadow-xs'
+                                : isSelected
+                                ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
+                                : isIgnored
+                                ? 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-100 hover:bg-white'
+                                : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
+                            }`}
+                          >
+                            {/* Top Row: Checkbox, Type, Page, ID, Status & Linter Badges */}
+                            <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-100">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {/* Checkbox for merge selection */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => toggleSelectChunk(chunk.chunk_id, e)}
+                                  className="text-slate-400 hover:text-indigo-600 transition p-0.5 rounded cursor-pointer shrink-0"
+                                  title={isChecked ? '선택 해제' : '병합 대상으로 선택'}
+                                >
+                                  {isChecked ? (
+                                    <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                                  ) : (
+                                    <Square className="w-3.5 h-3.5 text-slate-300 hover:text-slate-500" />
+                                  )}
+                                </button>
+
+                                {isTable ? (
+                                  <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <Table2 className="w-3 h-3" />
+                                    표
+                                  </span>
+                                ) : isArticle ? (
+                                  <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <Scale className="w-3 h-3" />
+                                    조문
+                                  </span>
+                                ) : (
+                                  <span className="bg-slate-100 text-slate-700 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <AlignLeft className="w-3 h-3 text-slate-400" />
+                                    문단
+                                  </span>
+                                )}
+
+                                <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
+                                  {chunk.chunk_id}
+                                </span>
+
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {formatChunkPage(chunk)}
+                                </span>
+
+                                {isEdited && (
+                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-amber-500" />
+                                    수정됨
+                                  </span>
+                                )}
+
+                                {isIgnored && (
+                                  <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <EyeOff className="w-2.5 h-2.5 text-rose-500" />
+                                    제외됨
+                                  </span>
+                                )}
+
+                                {/* Linter Badges */}
+                                {isCEmpty ? (
+                                  <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                                    빈 청크
+                                  </span>
+                                ) : isTable ? (
+                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                    표 원형 보존 상태
+                                  </span>
+                                ) : isCOver ? (
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                    512+ tokens
+                                  </span>
+                                ) : isCUnder ? (
+                                  <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <Info className="w-2.5 h-2.5 text-sky-600" />
+                                    &lt;20 tokens
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              {/* Quick Ignore Toggle Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleIgnoreChunk(chunk.chunk_id);
+                                }}
+                                className={`p-1 rounded transition cursor-pointer ${
+                                  isIgnored
+                                    ? 'text-rose-600 hover:bg-rose-100 bg-rose-50'
+                                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                }`}
+                                title={isIgnored ? '임베딩 포함으로 변경' : '임베딩 제외로 변경'}
+                              >
+                                {isIgnored ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+
+                            {/* Text Snippet (Line Clamped) */}
+                            <div className="pt-2 text-slate-700 leading-snug line-clamp-2 text-[11px]">
+                              {isTable && chunk.table_caption
+                                ? `[표] ${chunk.table_caption}`
+                                : chunk.text || (chunk.raw_html ? 'HTML 표 데이터' : '(빈 청크)')}
+                            </div>
+
+                            {/* Footer Row: Parent Section & Token count */}
+                            <div className="pt-2 mt-1.5 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                              <span className="truncate max-w-[170px]" title={parentSec?.title || chunk.section_id || chunk.parent_id}>
+                                {parentSec?.title || chunk.section_id || chunk.parent_id}
+                              </span>
+                              <span>~{cWords} tokens</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })
+            )}
+
+            {/* Pagination / Smooth Scroll Guard for 1000+ chunks */}
+            {filteredChunks.length > displayLimit && (
+              <div className="p-3 bg-white border border-dashed border-indigo-200 rounded-xl text-center flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-slate-600 font-medium">
+                  전체 {filteredChunks.length}개 청크 중 <strong>{displayedChildCount}</strong>개 표시 중 (부드러운 스크롤)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLimit((prev) => prev + 50)}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    +50개 더 보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLimit(filteredChunks.length)}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    모두 표시
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -1097,7 +1294,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   </span>
                 </div>
 
-                {isOverTokenLimit ? (
+                {isTableChunk ? (
+                  <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded font-sans text-[11px] flex items-center gap-1.5 font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    표 원형 보존 상태 (Atomic Table - 512 한도 예외)
+                  </span>
+                ) : isOverTokenLimit ? (
                   <div className="flex items-center gap-1.5 font-sans">
                     <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px] flex items-center gap-1 font-semibold">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
@@ -1138,6 +1340,39 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
               {/* Scrollable Editor Body */}
               <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                {/* Level 2 Parent Chunk Info Banner */}
+                {activeParentChunk && (
+                  <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-indigo-900 flex items-center gap-1">
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>상위 Parent:</span>
+                      </span>
+                      <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                        {activeParentChunk.parent_chunk_id || activeParentChunk.id}
+                      </span>
+                      {activeParentChunk.title && (
+                        <span className="text-slate-700 font-medium truncate max-w-xs">
+                          · {activeParentChunk.title}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-600 font-mono">
+                      <span>
+                        소속 자식 청크: <strong>{activeParentChunk.child_chunk_ids?.length || 1}</strong>개
+                      </span>
+                      <span
+                        className={
+                          (activeParentChunk.token_estimate || 0) > 2048
+                            ? 'text-amber-700 font-bold'
+                            : 'text-slate-600'
+                        }
+                      >
+                        Parent 토큰: ~{activeParentChunk.token_estimate || 0} tok {(activeParentChunk.token_estimate || 0) > 2048 ? '(비대 알림)' : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 
                 {/* 1. Parent Section & Exclude Setting Row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -1146,7 +1381,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
-                        상위 섹션 재할당
+                        소속 섹션 재할당 (Parent & Child 연쇄 동기화)
                       </span>
                       {activeChunk.parent_chunk_id && (
                         <span className="font-mono text-[10px] font-normal text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">

@@ -311,36 +311,36 @@ Vector DB 및 하이브리드 검색 엔진(Elasticsearch/OpenSearch/Milvus/Chro
 * [x] **JSONL 익스포트 함수 확장**:
   * `parent_context_text` 필드 추가 (Small-to-Big Retrieval 100% 지원).
 
-### 📌 Phase 2: 수동 편집 & 상위 섹션 재지정 핸들러 구현
+### 📌 Phase 2: 수동 편집 & 상위 섹션 재지정 핸들러 구현 (완료)
 > **목표**: 프론트엔드 상태 관리(`App.tsx`)에 3단계 계층 동기화 로직 및 섹션 재지정 기능 구현.
 
-* [ ] **타입 정의 업데이트 (`frontend/src/types/index.ts`)**:
+* [x] **타입 정의 업데이트 (`frontend/src/types/index.ts`)**:
   * `SectionNode`, `ParentChunk`, `ChildChunk`, `HierarchicalEtlResult` 인터페이스 정의.
-* [ ] **Child 분할/병합 핸들러 업데이트**:
+* [x] **Child 분할/병합 핸들러 업데이트**:
   * Child 분할 시 상위 `parent_chunk_id` 자동 승계 및 Parent 텍스트 실시간 재계산.
   * Child 병합 시 소속 Parent 관계 정합성 유지 및 **자식 0개 Parent 자동 삭제(Auto-pruning)**.
-* [ ] **★ Parent 상위 섹션 재지정 핸들러 (`handleReassignParentSection`)**:
+* [x] **★ Parent 상위 섹션 재지정 핸들러 (`handleReassignParentSection`)**:
   * `(parentChunkId: string, newSectionId: string) => void` 구현.
   * 하위 Child 전체의 `breadcrumbs` 및 `section_id` 연쇄 갱신(Cascading Sync).
-* [ ] **프론트엔드 Re-index 유틸리티 (`idUtils.ts`)**:
+* [x] **프론트엔드 Re-index 유틸리티 (`idUtils.ts`)**:
   * 물리적 순서 기준 `s01`, `p001`, `c001` 일괄 재정렬 로직 구현.
-* [ ] **린터(Linter) 기준값 업데이트**:
+* [x] **린터(Linter) 기준값 업데이트**:
   * Child 512 토큰 초과 / 20 토큰 미만 검사.
   * Parent 2048 토큰 초과 검사.
 
-### 📌 Phase 3: 청크 스튜디오 UI 고도화 및 시각화
+### 📌 Phase 3: 청크 스튜디오 UI 고도화 및 시각화 (완료)
 > **목표**: 3단계 계층을 직관적으로 탐색하고 제어할 수 있는 3단 에디터 UI 제공.
 
-* [ ] **1열 (계층 목차 트리)**:
-  * Section 노드 하위에 소속 Parent 개수 및 Child 개수 뱃지 표기.
-* [ ] **2열 (타임라인 목록)**:
+* [x] **1열 (계층 목차 트리)**:
+  * Section 노드 하위에 소속 Parent 개수 및 Child 개수 뱃지 표기 (`P {pCount} · C {cCount}`).
+* [x] **2열 (타임라인 목록)**:
   * Parent Chunk 단위로 그룹 테두리(Container Box)를 렌더링하고, 그 내부에 소속 Child 카드들을 배치.
   * Parent 헤더에 `[소속 섹션: 제1장 총칙 ▾]` 빠른 변경 드롭다운 배치.
-  * 초기 진입 시 첫 번째 섹션을 기본 활성화하여 1,000+ 청크 렌더링 부하 방어.
-* [ ] **3열 (포커스 에디터 & 모달)**:
+  * 초기 진입 시 첫 번째 섹션을 기본 활성화하여 1,000+ 청크 렌더링 부하 방어 및 50개 단위 가상화 페이징 제공.
+* [x] **3열 (포커스 에디터 & 모달)**:
   * `ChunkEditModal` 및 포커스 에디터에 '상위 Parent 정보' 및 '소속 섹션 재지정' 셀렉터 반영.
-  * 표(Table) 원형 렌더링 및 512 토큰 초과 시에도 "표 원형 보존 상태" 정상 뱃지 부여.
-* [ ] **전체 플로우 E2E 테스트**:
+  * 표(Table) 원형 렌더링 및 512 토큰 초과 시에도 "표 원형 보존 상태 (Atomic Table)" 정상 뱃지 부여.
+* [x] **전체 플로우 E2E 테스트**:
   * PDF 파싱 $\rightarrow$ 3단계 청킹 자동 생성 $\rightarrow$ 수동 분할/병합 $\rightarrow$ 상위 섹션 재지정 $\rightarrow$ JSONL 다운로드 검증.
 
 ---

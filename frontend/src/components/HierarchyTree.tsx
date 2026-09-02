@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { Network, BookOpen, Folder, FileText, Info, Search } from 'lucide-react';
-import type { ParentSection } from '../types';
+import type { ParentSection, ParentChunk } from '../types';
 
 interface HierarchyTreeProps {
   sections: ParentSection[];
+  parentChunks?: ParentChunk[];
   selectedSectionId: string | null;
   onSelectSection: (id: string | null) => void;
   isLoading: boolean;
@@ -11,6 +12,7 @@ interface HierarchyTreeProps {
 
 export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   sections,
+  parentChunks,
   selectedSectionId,
   onSelectSection,
   isLoading,
@@ -108,22 +110,50 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
                     {sec.title}
                   </span>
                 </div>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                    sec.child_chunk_ids.length === 0
-                      ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200'
-                      : isActive
-                      ? 'bg-indigo-200/70 text-indigo-900'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                  title={
-                    sec.child_chunk_ids.length === 0
-                      ? '청크가 없는 빈 섹션'
-                      : `${sec.child_chunk_ids.length}개 자식 청크`
-                  }
-                >
-                  {sec.child_chunk_ids.length}
-                </span>
+                {(() => {
+                  const pCount =
+                    sec.parent_chunk_ids && sec.parent_chunk_ids.length > 0
+                      ? sec.parent_chunk_ids.length
+                      : (parentChunks || []).filter((p) => p.section_id === sec.id).length;
+                  const cCount = sec.child_chunk_ids?.length || 0;
+                  const isEmpty = pCount === 0 && cCount === 0;
+
+                  return (
+                    <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                      {isEmpty ? (
+                        <span
+                          className="bg-amber-50 text-amber-700 font-semibold border border-amber-200 px-1.5 py-0.5 rounded"
+                          title="청크가 없는 빈 섹션"
+                        >
+                          빈 섹션
+                        </span>
+                      ) : (
+                        <>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-semibold ${
+                              isActive
+                                ? 'bg-indigo-200 text-indigo-950'
+                                : 'bg-indigo-50 text-indigo-700 border border-indigo-200/60'
+                            }`}
+                            title={`소속 Parent 청크: ${pCount}개`}
+                          >
+                            P {pCount}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded ${
+                              isActive
+                                ? 'bg-indigo-300/60 text-indigo-950 font-bold'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                            title={`소속 Child 청크: ${cCount}개`}
+                          >
+                            C {cCount}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })

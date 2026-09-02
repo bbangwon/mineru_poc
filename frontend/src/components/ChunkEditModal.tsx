@@ -1,32 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree, BookOpen } from 'lucide-react';
-import type { ChildChunk, ParentSection } from '../types';
+import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree, BookOpen, ShieldCheck } from 'lucide-react';
+import type { ChildChunk, ParentSection, ParentChunk } from '../types';
 import { syncChunkPageMetadata, formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkEditModalProps {
   chunk: ChildChunk | null;
   parentSections: ParentSection[];
+  parentChunks?: ParentChunk[];
   onClose: () => void;
   onSave: (updatedChunk: ChildChunk) => void;
+  onReassignParentSection?: (parentChunkId: string, newSectionId: string) => void;
 }
 
 export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   chunk,
   parentSections,
+  parentChunks,
   onClose,
   onSave,
+  onReassignParentSection,
 }) => {
   const [text, setText] = useState(chunk?.text || '');
-  const [parentId, setParentId] = useState(chunk?.parent_chunk_id || chunk?.parent_id || '');
+  const [sectionId, setSectionId] = useState(chunk?.section_id || chunk?.parent_id || '');
   const [pageNumber, setPageNumber] = useState<number>(chunk?.page_number || 1);
   const [pageEnd, setPageEnd] = useState<number | ''>(chunk?.page_end || '');
   const [isIgnored, setIsIgnored] = useState(Boolean(chunk?.is_ignored));
-  const [activeTab, setActiveTab] = useState<'text' | 'raw_html'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'raw_html' | 'preview'>('text');
 
   // Table specific state
-  const isTable = chunk?.chunk_type === 'table';
-  const isArticle = chunk?.chunk_type === 'article';
+  const isTable = chunk?.chunk_type === 'table' || Boolean(chunk?.is_atomic_table);
+  const isArticle = chunk?.chunk_type === 'article' || chunk?.chunk_type === 'article_clause';
   const [rawHtml, setRawHtml] = useState(chunk?.raw_html || '');
   const [tableCaption, setTableCaption] = useState(chunk?.table_caption || '');
   const [tableFootnote, setTableFootnote] = useState(chunk?.table_footnote || '');
@@ -34,7 +38,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   useEffect(() => {
     if (!chunk) return;
     setText(chunk.text || '');
-    setParentId(chunk.parent_id || '');
+    setSectionId(chunk.section_id || chunk.parent_id || '');
     setPageNumber(chunk.page_number || 1);
     setPageEnd(chunk.page_end || '');
     setIsIgnored(Boolean(chunk.is_ignored));
@@ -51,29 +55,40 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   const wordCount = estimateKoreanTokens(currentTextToCount);
   const charCount = currentTextToCount.length;
 
+  const currentParent = (parentChunks || []).find(
+    (p) => (p.parent_chunk_id || p.id) === (chunk.parent_chunk_id || chunk.parent_id)
+  );
+
   const handleApply = () => {
-    // Determine updated breadcrumbs if parent changed
-    const targetParent = parentSections.find((p) => p.id === parentId);
+    // Determine updated breadcrumbs if section changed
+    const targetSection = parentSections.find((p) => p.id === sectionId);
     let updatedBreadcrumbs = chunk.breadcrumbs || [];
-    if (targetParent) {
+    if (targetSection) {
       if (isArticle && chunk.metadata?.article_no) {
         const artDisplay = chunk.metadata?.article_title
           ? `${chunk.metadata.article_no}(${chunk.metadata.article_title})`
           : chunk.metadata.article_no;
-        updatedBreadcrumbs = [...targetParent.breadcrumbs, artDisplay];
+        updatedBreadcrumbs = [...targetSection.breadcrumbs, artDisplay];
       } else {
-        updatedBreadcrumbs = [...targetParent.breadcrumbs];
+        updatedBreadcrumbs = [...targetSection.breadcrumbs];
       }
     }
 
     const startPage = Math.max(1, pageNumber);
     const endPageNum = typeof pageEnd === 'number' && pageEnd > startPage ? pageEnd : undefined;
+    const pid = chunk.parent_chunk_id || chunk.parent_id || '';
+
+    // If section changed and onReassignParentSection exists, reassign parent's section
+    if (sectionId !== (chunk.section_id || chunk.parent_id) && onReassignParentSection && pid) {
+      onReassignParentSection(pid, sectionId);
+    }
 
     const updated: ChildChunk = {
       ...chunk,
       text: text,
-      parent_chunk_id: parentId,
-      parent_id: parentId,
+      section_id: sectionId,
+      parent_chunk_id: pid,
+      parent_id: pid,
       page_number: startPage,
       page_end: endPageNum,
       breadcrumbs: updatedBreadcrumbs,
@@ -121,7 +136,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {formatChunkPageFull(chunk)} · {isTable ? '원형 보존 표 청크' : isArticle ? '조문 청크' : '일반 문단 청크'}
+                {formatChunkPageFull(chunk)} · {isTable ? '원형 보존 표 청크 (Atomic Table)' : isArticle ? '조문 청크' : '일반 문단 청크'}
               </p>
             </div>
           </div>
@@ -136,17 +151,54 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
-          {/* Top Options Row: Parent Section Selector, Page Range & Embedding Exclude Toggle */}
+          {/* Level 2 Parent Chunk Info & Context Banner */}
+          <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-indigo-900 flex items-center gap-1">
+                <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
+                <span>상위 Parent:</span>
+              </span>
+              <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                {chunk.parent_chunk_id || chunk.parent_id || 'p001'}
+              </span>
+              {currentParent?.title && (
+                <span className="text-slate-700 font-medium truncate max-w-xs">
+                  · {currentParent.title}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 text-[11px] text-slate-600 font-mono">
+              {currentParent && (
+                <>
+                  <span>
+                    소속 자식 청크: <strong>{currentParent.child_chunk_ids?.length || 1}</strong>개
+                  </span>
+                  <span
+                    className={
+                      (currentParent.token_estimate || 0) > 2048
+                        ? 'text-amber-700 font-bold'
+                        : 'text-slate-600'
+                    }
+                  >
+                    Parent 토큰: ~{currentParent.token_estimate || 0} tok
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Top Options Row: Section Reassign, Page Range & Embedding Exclude Toggle */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-            {/* Parent Section Selector */}
+            {/* Section Reassign Selector */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
                 <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
-                소속 부모 섹션
+                소속 섹션 (Section) 재지정
               </label>
               <select
-                value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
+                value={sectionId}
+                onChange={(e) => setSectionId(e.target.value)}
                 className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
                 {parentSections.map((sec) => (
@@ -156,7 +208,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                 ))}
               </select>
               <p className="text-[11px] text-slate-500 mt-1">
-                상위 브레드크럼 컨텍스트가 갱신됩니다.
+                상위 섹션 및 하위 브레드크럼이 일괄 연쇄 동기화됩니다.
               </p>
             </div>
 
@@ -215,7 +267,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                     RAG Vector DB 임베딩 대상에서 제외
                   </span>
                   <p className="text-[11px] text-slate-400">
-                    목차, 면책조항, 머리글 등 검색 노이즈 청크를 JSONL 내보내기 시 제외합니다.
+                    목차, 면책조항 등 검색 노이즈 청크를 JSONL 적재 시 제외합니다.
                   </p>
                 </div>
               </label>
@@ -225,29 +277,47 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
           {/* Table Special Fields */}
           {isTable && (
             <div className="space-y-3 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
-              <div className="flex items-center gap-2 border-b border-indigo-200/60 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('text')}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${
-                    activeTab === 'text'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-indigo-700 hover:bg-indigo-100'
-                  }`}
-                >
-                  본문 표시 텍스트
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('raw_html')}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${
-                    activeTab === 'raw_html'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-indigo-700 hover:bg-indigo-100'
-                  }`}
-                >
-                  표 HTML 원형 (raw_html)
-                </button>
+              <div className="flex items-center justify-between border-b border-indigo-200/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('text')}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      activeTab === 'text'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    표 텍스트 (검색용 요약)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('raw_html')}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      activeTab === 'raw_html'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    표 HTML 원형 (raw_html)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('preview')}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      activeTab === 'preview'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    HTML 미리보기
+                  </button>
+                </div>
+
+                <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  표 원형 보존 상태 (Atomic Table)
+                </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -275,25 +345,48 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
             </div>
           )}
 
-          {/* Main Text / HTML Editor Area */}
+          {/* Main Text / HTML / Preview Editor Area */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold text-slate-700">
-                {isTable && activeTab === 'raw_html' ? '표 원형 HTML 편집' : '청크 본문 텍스트 (Text) 편집'}
+                {isTable && activeTab === 'raw_html'
+                  ? '표 원형 HTML 편집'
+                  : isTable && activeTab === 'preview'
+                  ? '표 HTML 렌더링 미리보기'
+                  : '청크 본문 텍스트 (Text) 편집'}
               </label>
               <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
                 <span>글자 수: <strong className="text-slate-700">{charCount}</strong>자</span>
-                <span>추정 토큰/단어: <strong className="text-indigo-600">~{wordCount}</strong> words</span>
-                {wordCount > 500 && (
-                  <span className="text-amber-600 flex items-center gap-1 font-sans text-[11px]">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    토큰 초과 주의 (분할 권장)
+                <span>추정 토큰/단어: <strong className="text-indigo-600">~{wordCount}</strong> tokens</span>
+                {isTable ? (
+                  <span className="text-emerald-700 flex items-center gap-1 font-sans text-[11px] font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    표 원형 보존 (512 한도 예외)
+                  </span>
+                ) : wordCount > 512 ? (
+                  <span className="text-amber-600 flex items-center gap-1 font-sans text-[11px] font-semibold">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    512 토큰 초과 주의 (분할 권장)
+                  </span>
+                ) : (
+                  <span className="text-emerald-700 flex items-center gap-1 font-sans text-[11px]">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    임베딩 최적 길이
                   </span>
                 )}
               </div>
             </div>
 
-            {isTable && activeTab === 'raw_html' ? (
+            {isTable && activeTab === 'preview' ? (
+              <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 min-h-[240px] max-h-[380px] overflow-y-auto">
+                <div
+                  className="prose-custom text-xs"
+                  dangerouslySetInnerHTML={{
+                    __html: rawHtml || text || '<p>표 내용 없음</p>',
+                  }}
+                />
+              </div>
+            ) : isTable && activeTab === 'raw_html' ? (
               <textarea
                 value={rawHtml}
                 onChange={(e) => setRawHtml(e.target.value)}

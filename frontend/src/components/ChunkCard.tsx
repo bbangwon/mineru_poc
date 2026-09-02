@@ -82,6 +82,11 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
               <AlertTriangle className="w-3 h-3 text-rose-600" />
               빈 청크
             </span>
+          ) : isTable ? (
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+              표 원형 보존 상태
+            </span>
           ) : isOverTokenLimit ? (
             <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-amber-600" />
