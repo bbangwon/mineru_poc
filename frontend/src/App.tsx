@@ -677,17 +677,13 @@ export function App() {
       delete cleanMetadata.is_split;
       delete cleanMetadata.split_from;
       delete cleanMetadata.split_part;
+      delete cleanMetadata.is_merged;
+      delete cleanMetadata.merged_from;
+      delete cleanMetadata.merged_count;
     }
 
-    const chunk1Meta = syncChunkPageMetadata(
-      cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 1 } : { split_from: targetChunkId, split_part: 1 },
-      p1
-    );
-
-    const chunk2Meta = syncChunkPageMetadata(
-      cleanMetadata ? { ...cleanMetadata, split_from: targetChunkId, split_part: 2 } : { split_from: targetChunkId, split_part: 2 },
-      p2
-    );
+    const chunk1Meta = syncChunkPageMetadata(cleanMetadata, p1);
+    const chunk2Meta = syncChunkPageMetadata(cleanMetadata, p2);
 
     const targetParentId = target.parent_chunk_id || target.parent_id || '';
     const targetSectionId = target.section_id || '';
@@ -841,15 +837,13 @@ export function App() {
       delete cleanMetadata.is_merged;
       delete cleanMetadata.merged_from;
       delete cleanMetadata.merged_count;
+      delete cleanMetadata.is_split;
+      delete cleanMetadata.split_from;
+      delete cleanMetadata.split_part;
     }
 
     const mergedMeta = syncChunkPageMetadata(
-      {
-        ...(cleanMetadata || {}),
-        is_merged: true,
-        merged_from: chunkIds,
-        merged_count: chunkIds.length,
-      },
+      cleanMetadata,
       minPage,
       finalEnd
     );
