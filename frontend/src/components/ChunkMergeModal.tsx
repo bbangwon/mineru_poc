@@ -12,6 +12,7 @@ import {
   AlignLeft,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
+import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkMergeModalProps {
   selectedChunks: ChildChunk[];
@@ -32,24 +33,27 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
   onClose,
   onConfirmMerge,
 }) => {
-  const [separator, setSeparator] = useState<'\n\n' | '\n' | ' '>('\n\n');
-  const [mergedText, setMergedText] = useState('');
-  const [customChunkId, setCustomChunkId] = useState('');
+  const [separator, setSeparator] = useState<string>('\n\n');
+  const [mergedText, setMergedText] = useState<string>('');
+  const [customChunkId, setCustomChunkId] = useState<string>('');
 
-  const minPageCalculated = selectedChunks.length > 0
-    ? Math.min(...selectedChunks.map((c) => c.page_number || 1))
-    : 1;
-  const maxPageCalculated = selectedChunks.length > 0
-    ? Math.max(...selectedChunks.map((c) => (c as any).page_end || c.page_number || 1))
-    : 1;
+  const minPageCalculated = useMemo(() => {
+    if (selectedChunks.length === 0) return 1;
+    return Math.min(...selectedChunks.map((c) => c.page_number || 1));
+  }, [selectedChunks]);
+
+  const maxPageCalculated = useMemo(() => {
+    if (selectedChunks.length === 0) return 1;
+    return Math.max(...selectedChunks.map((c) => (c as any).page_end || c.page_number || 1));
+  }, [selectedChunks]);
 
   const [pageStart, setPageStart] = useState<number>(minPageCalculated);
-  const [pageEnd, setPageEnd] = useState<number | ''>(maxPageCalculated > minPageCalculated ? maxPageCalculated : '');
+  const [pageEnd, setPageEnd] = useState<number | ''>(
+    maxPageCalculated > minPageCalculated ? maxPageCalculated : ''
+  );
 
-  // Helper: count words
   const countWords = (text: string) => {
-    if (!text || !text.trim()) return 0;
-    return text.trim().split(/\s+/).length;
+    return estimateKoreanTokens(text);
   };
 
   const parentMap = useMemo(
@@ -77,12 +81,12 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
 
   const totalWords = countWords(mergedText);
   const totalChars = mergedText.length;
-  const isOverLimit = totalWords > 800;
+  const isOverLimit = totalWords > 512;
   const isUnderLimit = totalWords < 20;
 
   const pageDisplay = pageEnd && pageEnd > pageStart ? `p.${pageStart}~p.${pageEnd}` : `p.${pageStart}`;
 
-  const primaryParent = firstChunk ? parentMap.get(firstChunk.parent_id) : null;
+  const primaryParent = firstChunk ? parentMap.get(firstChunk.section_id || firstChunk.parent_id || '') : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,7 +254,7 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
           <div className="flex items-center justify-between text-xs bg-slate-100 p-2.5 rounded-xl border border-slate-200 font-mono">
             <div className="flex items-center gap-3">
               <span>
-                병합 후 단어 수: <strong className="text-indigo-600 font-semibold">~{totalWords}</strong> words
+                병합 후 추정 토큰: <strong className="text-indigo-600 font-semibold">~{totalWords}</strong> tokens
               </span>
               <span>
                 글자 수: <strong className="text-slate-800 font-semibold">{totalChars}</strong>자
@@ -263,12 +267,12 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
             {isOverLimit ? (
               <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-semibold">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                800자 초과 (병합 주의)
+                512 토큰 초과 (분할 권장)
               </span>
             ) : isUnderLimit ? (
               <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">
                 <Info className="w-3.5 h-3.5 text-sky-600" />
-                20단어 미만
+                20 토큰 미만 (병합 권장)
               </span>
             ) : (
               <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">

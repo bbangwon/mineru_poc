@@ -1,52 +1,78 @@
 import React, { useState } from 'react';
 import { Code2, X, Copy, Check } from 'lucide-react';
-import type { ChildChunk, ParentSection } from '../types';
+import type { ChildChunk, ParentSection, ParentChunk } from '../types';
 import { getChunkPageList } from '../utils/pageUtils';
 
 interface JsonlModalProps {
   chunk: ChildChunk | null;
   parentSections: ParentSection[];
+  parentChunks?: ParentChunk[];
   onClose: () => void;
 }
 
 export const JsonlModal: React.FC<JsonlModalProps> = ({
   chunk,
   parentSections,
+  parentChunks,
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
 
   if (!chunk) return null;
 
-  const parent = parentSections.find((p) => p.id === chunk.parent_id);
+  const pid = chunk.parent_chunk_id || chunk.parent_id;
+  const parent = parentChunks?.find((p) => (p.parent_chunk_id || p.id) === pid);
+  const secId = chunk.section_id || parent?.section_id || chunk.parent_id;
+  const section = parentSections.find((s) => s.id === secId);
+
   const startPage = chunk.page_number || 1;
   const endPage = chunk.page_end && chunk.page_end >= startPage ? chunk.page_end : startPage;
   const pages = getChunkPageList(startPage, endPage);
 
+  const breadcrumbs = chunk.breadcrumbs || section?.breadcrumbs || [];
+  const breadcrumbs_str = breadcrumbs.join(' > ');
+  const parentText = parent?.text || '';
+  const parentContextText = parentText
+    ? (breadcrumbs_str && !parentText.startsWith(`[${breadcrumbs_str}]`)
+        ? `[${breadcrumbs_str}]\n${parentText}`
+        : parentText)
+    : '';
+
+  const isAtomicTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+
   const record: Record<string, any> = {
     id: chunk.chunk_id,
-    parent_id: chunk.parent_id,
-    parent_title: parent?.title || '',
-    chunk_type: chunk.chunk_type,
+    parent_chunk_id: pid,
+    section_id: secId,
+    section_title: section?.title || '',
+    breadcrumbs: breadcrumbs,
+    breadcrumbs_str: breadcrumbs_str,
     text: chunk.text,
+    parent_context_text: parentContextText,
+    chunk_type: chunk.chunk_type,
+    is_atomic_table: isAtomicTable,
     page: startPage,
     ...(endPage > startPage ? { page_end: endPage } : {}),
-    breadcrumbs: chunk.breadcrumbs,
-    breadcrumbs_str: (chunk.breadcrumbs || []).join(' > '),
+    pages: pages,
+    token_estimate: chunk.token_estimate,
+    parent_token_estimate: parent?.token_estimate || 0,
     metadata: {
       ...(chunk.metadata || {}),
+      doc_title: chunk.metadata?.doc_title || '',
+      section: section?.title || '',
       page: startPage,
       page_start: startPage,
       page_end: endPage,
       pages: pages,
-      parent_breadcrumbs: chunk.breadcrumbs,
-      is_atomic_table: chunk.chunk_type === 'table',
+      is_atomic_table: isAtomicTable,
     },
   };
 
-  if (chunk.chunk_type === 'table') {
+  if (isAtomicTable) {
     record.raw_html = chunk.raw_html || '';
-    record.image_path = chunk.image_path || '';
+    if (chunk.table_caption) record.table_caption = chunk.table_caption;
+    if (chunk.image_path) record.image_path = chunk.image_path;
+    if (chunk.image_url) record.image_url = chunk.image_url;
   }
 
   const jsonString = JSON.stringify(record, null, 2);
@@ -68,7 +94,7 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <Code2 className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-bold text-slate-800 text-sm">RAG JSONL 레코드 미리보기</h3>
+            <h3 className="font-bold text-slate-800 text-sm">RAG JSONL 레코드 미리보기 (Small-to-Big Retrieval)</h3>
           </div>
           <button
             type="button"
@@ -80,7 +106,9 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
         </div>
 
         <p className="text-xs text-slate-500">
-          Vector DB나 RAG 파이프라인(LangChain, LlamaIndex 등)에 그대로 적재되는 표준 JSONL 형태의 단일 레코드입니다.
+          Vector DB 검색용 <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600 font-mono">text</code>와
+          LLM 프롬프트 생성용 <code className="bg-slate-100 px-1 py-0.5 rounded text-emerald-600 font-mono">parent_context_text</code>가
+          분리 적재되는 표준 3단계 계층 JSONL 단일 레코드입니다.
         </p>
 
         {/* Content Box */}
@@ -99,13 +127,13 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-emerald-600">복사 완료!</span>
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span className="text-emerald-700">복사 완료!</span>
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>레코드 복사</span>
+                <Copy className="w-4 h-4" />
+                <span>JSON 복사</span>
               </>
             )}
           </button>

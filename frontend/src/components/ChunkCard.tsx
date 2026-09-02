@@ -2,6 +2,7 @@ import React from 'react';
 import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { formatChunkPageFull } from '../utils/pageUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkCardProps {
   chunk: ChildChunk;
@@ -16,16 +17,16 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
   onOpenJsonlModal,
   onEditChunk,
 }) => {
-  const isTable = chunk.chunk_type === 'table';
-  const isArticle = chunk.chunk_type === 'article';
+  const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+  const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
   const isIgnored = Boolean(chunk.is_ignored);
   const isEdited = Boolean(chunk.is_edited);
   const breadcrumbs = chunk.breadcrumbs || [];
 
-  const wordCount = chunk.token_estimate || (chunk.text ? chunk.text.trim().split(/\s+/).length : 0);
+  const wordCount = chunk.token_estimate || (chunk.text ? estimateKoreanTokens(chunk.text) : 0);
   const isEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
-  const isOverTokenLimit = wordCount > 800;
-  const isUnderTokenLimit = !isEmpty && wordCount > 0 && wordCount < 20;
+  const isOverTokenLimit = !isTable && wordCount > 512;
+  const isUnderTokenLimit = !isTable && !isEmpty && wordCount > 0 && wordCount < 20;
 
   return (
     <div
@@ -84,12 +85,12 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
           ) : isOverTokenLimit ? (
             <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-amber-600" />
-              800+ words (분할 권장)
+              512+ tokens (분할 권장)
             </span>
           ) : isUnderTokenLimit ? (
             <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
               <Info className="w-3 h-3 text-sky-600" />
-              &lt;20 words (병합 권장)
+              &lt;20 tokens (병합 권장)
             </span>
           ) : null}
 
@@ -185,10 +186,11 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
       {/* Footer Info */}
       <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
         <span>
-          부모 섹션 ID: <strong className="text-slate-600">{chunk.parent_id}</strong>
+          Parent: <strong className="text-slate-600">{chunk.parent_chunk_id || chunk.parent_id}</strong>
+          {chunk.section_id && ` | Section: ${chunk.section_id}`}
           {parentSection && ` (${parentSection.title})`}
         </span>
-        <span>추정 단어: ~{chunk.token_estimate} words</span>
+        <span>추정 토큰: ~{wordCount} tokens</span>
       </div>
     </div>
   );

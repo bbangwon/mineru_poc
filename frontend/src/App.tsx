@@ -20,9 +20,38 @@ import {
   saveEtlResult,
   resetEtlResult,
 } from './api/client';
-import { getNextChunkId, reindexEtlData } from './utils/idUtils';
+import { getNextChunkId, reindexEtlData, estimateKoreanTokens } from './utils/idUtils';
 import { syncChunkPageMetadata } from './utils/pageUtils';
-import type { PdfItem, EtlResult, ChildChunk, ParentSection, JobStatusResponse } from './types';
+import type {
+  PdfItem,
+  HierarchicalEtlResult,
+  ChildChunk,
+  ParentChunk,
+  SectionNode,
+  JobStatusResponse,
+} from './types';
+
+/**
+ * 백엔드 또는 이전 스키마 데이터를 3단계 정규 계층(Section - Parent - Child) 구조로 보정
+ */
+function normalizeEtlData(data: any): HierarchicalEtlResult {
+  if (!data) return data;
+  const sections: SectionNode[] = data.sections || data.parent_sections || [];
+  const parent_chunks: ParentChunk[] = data.parent_chunks || [];
+  const child_chunks: ChildChunk[] = (data.child_chunks || []).map((c: any) => ({
+    ...c,
+    parent_chunk_id: c.parent_chunk_id || c.parent_id || '',
+    parent_id: c.parent_chunk_id || c.parent_id || '',
+    section_id: c.section_id || '',
+  }));
+  return {
+    ...data,
+    sections,
+    parent_sections: sections,
+    parent_chunks,
+    child_chunks,
+  };
+}
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -41,7 +70,7 @@ export function App() {
   const [isParsing, setIsParsing] = useState(false);
   const [activeJob, setActiveJob] = useState<JobStatusResponse | null>(null);
   const [isLoadingEtl, setIsLoadingEtl] = useState(true);
-  const [etlData, setEtlData] = useState<EtlResult | null>(null);
+  const [etlData, setEtlData] = useState<HierarchicalEtlResult | null>(null);
 
   // Edit and Persistence States
   const [isDirty, setIsDirty] = useState(false);
@@ -93,7 +122,7 @@ export function App() {
     setIsLoadingEtl(true);
     try {
       const data = await getEtlSample();
-      setEtlData(data);
+      setEtlData(normalizeEtlData(data));
       if (data.active_pdf) {
         setSelectedPdf(data.active_pdf);
       }
@@ -144,7 +173,7 @@ export function App() {
         if (job.status === 'completed') {
           setIsParsing(false);
           if (job.result) {
-            setEtlData(job.result);
+            setEtlData(normalizeEtlData(job.result));
             setSelectedSectionId(null);
             showToast(
               `🎉 백그라운드 ETL 완료! (소요: ${job.elapsed_time || 0}초, 청크: ${job.result.stats.total_child_chunks}개)`
@@ -243,6 +272,9 @@ export function App() {
 
     const finalChunk: ChildChunk = {
       ...updatedChunk,
+      token_estimate: updatedChunk.token_estimate || estimateKoreanTokens(updatedChunk.text),
+      parent_id: updatedChunk.parent_chunk_id || updatedChunk.parent_id || '',
+      parent_chunk_id: updatedChunk.parent_chunk_id || updatedChunk.parent_id || '',
       metadata: syncChunkPageMetadata(
         updatedChunk.metadata,
         updatedChunk.page_number,
@@ -255,40 +287,110 @@ export function App() {
       c.chunk_id === finalChunk.chunk_id ? finalChunk : c
     );
 
-    // 2) Synchronize parent sections if parent_id was changed
     const oldChunk = etlData.child_chunks.find((c) => c.chunk_id === finalChunk.chunk_id);
-    let updatedSections = [...etlData.parent_sections];
+    const oldPid = oldChunk ? (oldChunk.parent_chunk_id || oldChunk.parent_id) : '';
+    const newPid = finalChunk.parent_chunk_id || finalChunk.parent_id;
 
-    if (oldChunk && oldChunk.parent_id !== finalChunk.parent_id) {
-      updatedSections = updatedSections.map((sec) => {
-        if (sec.id === oldChunk.parent_id) {
-          // Remove from old parent
+    // 2) Update parent_chunks
+    const chunkMap = new Map<string, ChildChunk>();
+    for (const c of updatedChunks) {
+      chunkMap.set(c.chunk_id, c);
+    }
+
+    let updatedParents = [...(etlData.parent_chunks || [])];
+    if (oldPid && oldPid !== newPid) {
+      // Moved from old parent to new parent
+      updatedParents = updatedParents
+        .map((p) => {
+          const pid = p.parent_chunk_id || p.id;
+          if (pid === oldPid) {
+            const filtered = p.child_chunk_ids.filter((id) => id !== finalChunk.chunk_id);
+            const childObjects = filtered.map((id) => chunkMap.get(id)).filter(Boolean) as ChildChunk[];
+            const pText = childObjects.map((c) => c.text).join('\n\n');
+            const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+            const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
+            return {
+              ...p,
+              child_chunk_ids: filtered,
+              text: pText,
+              token_estimate: estimateKoreanTokens(pText),
+              page_range: [minP, maxP] as [number, number],
+              is_edited: true,
+            };
+          }
+          if (pid === newPid) {
+            const added = [...p.child_chunk_ids, finalChunk.chunk_id];
+            const childObjects = added.map((id) => chunkMap.get(id)).filter(Boolean) as ChildChunk[];
+            const pText = childObjects.map((c) => c.text).join('\n\n');
+            const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+            const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
+            return {
+              ...p,
+              child_chunk_ids: added,
+              text: pText,
+              token_estimate: estimateKoreanTokens(pText),
+              page_range: [minP, maxP] as [number, number],
+              is_edited: true,
+            };
+          }
+          return p;
+        })
+        .filter((p) => p.child_chunk_ids.length > 0); // Auto-prune empty parent
+    } else if (newPid) {
+      // Recompute same parent's text and tokens
+      updatedParents = updatedParents.map((p) => {
+        const pid = p.parent_chunk_id || p.id;
+        if (pid === newPid) {
+          const childObjects = p.child_chunk_ids.map((id) => chunkMap.get(id)).filter(Boolean) as ChildChunk[];
+          const pText = childObjects.map((c) => c.text).join('\n\n');
+          const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+          const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
           return {
-            ...sec,
-            child_chunk_ids: sec.child_chunk_ids.filter((id) => id !== finalChunk.chunk_id),
+            ...p,
+            text: pText,
+            token_estimate: estimateKoreanTokens(pText),
+            page_range: [minP, maxP] as [number, number],
+            is_edited: true,
           };
         }
-        if (sec.id === finalChunk.parent_id) {
-          // Add to new parent
+        return p;
+      });
+    }
+
+    // 3) Synchronize sections if section_id or parent changed
+    const sections = etlData.sections || etlData.parent_sections || [];
+    let updatedSections = sections;
+    if (oldChunk && (oldChunk.section_id !== finalChunk.section_id || oldChunk.parent_id !== finalChunk.parent_id)) {
+      updatedSections = sections.map((sec) => {
+        if (sec.id === oldChunk.section_id || sec.id === oldChunk.parent_id) {
           return {
             ...sec,
-            child_chunk_ids: [...sec.child_chunk_ids, finalChunk.chunk_id],
+            child_chunk_ids: (sec.child_chunk_ids || []).filter((id) => id !== finalChunk.chunk_id),
+          };
+        }
+        if (sec.id === finalChunk.section_id || sec.id === finalChunk.parent_id) {
+          return {
+            ...sec,
+            child_chunk_ids: [...(sec.child_chunk_ids || []), finalChunk.chunk_id],
           };
         }
         return sec;
       });
     }
 
-    // 3) Recalculate stats
+    // 4) Recalculate stats
     const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
     const updatedStats = {
       ...etlData.stats,
+      total_parent_chunks: updatedParents.length,
       total_words: totalWords,
     };
 
     setEtlData({
       ...etlData,
       child_chunks: updatedChunks,
+      parent_chunks: updatedParents,
+      sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
@@ -302,14 +404,15 @@ export function App() {
   // 6. Inline Section Title Updater (Column 1)
   const handleUpdateSectionTitle = (sectionId: string, newTitle: string) => {
     if (!etlData) return;
-    const oldSection = etlData.parent_sections.find((s) => s.id === sectionId);
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const oldSection = sections.find((s) => s.id === sectionId);
     if (!oldSection || oldSection.title === newTitle.trim()) return;
 
     const trimmed = newTitle.trim();
     const oldTitle = oldSection.title;
 
-    // 1) Update parent sections and child breadcrumbs
-    const updatedSections = etlData.parent_sections.map((s) => {
+    // 1) Update sections and child breadcrumbs
+    const updatedSections = sections.map((s) => {
       if (s.id === sectionId) {
         return { ...s, title: trimmed };
       }
@@ -325,6 +428,7 @@ export function App() {
 
     setEtlData({
       ...etlData,
+      sections: updatedSections,
       parent_sections: updatedSections,
       child_chunks: updatedChunks,
     });
@@ -335,36 +439,53 @@ export function App() {
   // 6-1. Delete Section Handler
   const handleDeleteSection = (sectionId: string, deleteChunks: boolean = false) => {
     if (!etlData) return;
-    const targetSection = etlData.parent_sections.find((s) => s.id === sectionId);
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetSection = sections.find((s) => s.id === sectionId);
     if (!targetSection) return;
 
-    // 1) Handle child chunks
+    // 1) Handle child chunks and parent chunks
     let updatedChunks = [...etlData.child_chunks];
+    let updatedParents = [...(etlData.parent_chunks || [])];
+
     if (deleteChunks) {
       // Remove all chunks belonging to this section
-      updatedChunks = updatedChunks.filter((c) => c.parent_id !== sectionId);
+      updatedChunks = updatedChunks.filter(
+        (c) => c.section_id !== sectionId && c.parent_id !== sectionId
+      );
+      updatedParents = updatedParents.filter((p) => p.section_id !== sectionId);
     } else {
-      // Reassign any remaining chunks to another parent if available
-      const fallbackParent =
-        etlData.parent_sections.find((s) => s.id === targetSection.parent_section_id) ||
-        etlData.parent_sections.find((s) => s.id !== sectionId);
-      if (fallbackParent) {
+      // Reassign to fallback section if available
+      const fallbackSection =
+        sections.find((s) => s.id === targetSection.parent_section_id) ||
+        sections.find((s) => s.id !== sectionId);
+      if (fallbackSection) {
         updatedChunks = updatedChunks.map((c) => {
-          if (c.parent_id === sectionId) {
+          if (c.section_id === sectionId || c.parent_id === sectionId) {
             return {
               ...c,
-              parent_id: fallbackParent.id,
-              breadcrumbs: fallbackParent.breadcrumbs,
+              section_id: fallbackSection.id,
+              parent_id: fallbackSection.id,
+              breadcrumbs: fallbackSection.breadcrumbs,
               is_edited: true,
             };
           }
           return c;
         });
+        updatedParents = updatedParents.map((p) => {
+          if (p.section_id === sectionId) {
+            return {
+              ...p,
+              section_id: fallbackSection.id,
+              is_edited: true,
+            };
+          }
+          return p;
+        });
       }
     }
 
-    // 2) Remove section from parent_sections
-    const updatedSections = etlData.parent_sections
+    // 2) Remove section from sections
+    const updatedSections = sections
       .filter((s) => s.id !== sectionId)
       .map((s) => {
         if (s.parent_section_id === sectionId) {
@@ -380,11 +501,13 @@ export function App() {
     const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
     const updatedStats = {
       ...etlData.stats,
+      total_sections: updatedSections.length,
       total_parent_sections: updatedSections.length,
+      total_parent_chunks: updatedParents.length,
       total_child_chunks: updatedChunks.length,
       paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
       table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
-      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause').length,
       total_words: totalWords,
     };
 
@@ -394,7 +517,9 @@ export function App() {
 
     setEtlData({
       ...etlData,
+      sections: updatedSections,
       parent_sections: updatedSections,
+      parent_chunks: updatedParents,
       child_chunks: updatedChunks,
       stats: updatedStats,
     });
@@ -409,9 +534,10 @@ export function App() {
     level: number;
   }) => {
     if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
 
     const parentSec = sectionData.parentSectionId
-      ? etlData.parent_sections.find((s) => s.id === sectionData.parentSectionId)
+      ? sections.find((s) => s.id === sectionData.parentSectionId)
       : null;
 
     const breadcrumbs = parentSec
@@ -419,25 +545,28 @@ export function App() {
       : [sectionData.title];
 
     const newId = `sec_manual_${Date.now()}`;
-    const newSection: ParentSection = {
+    const newSection: SectionNode = {
       id: newId,
       title: sectionData.title,
       level: sectionData.level,
       parent_section_id: sectionData.parentSectionId,
       breadcrumbs: breadcrumbs,
+      parent_chunk_ids: [],
       child_chunk_ids: [],
       full_text: '',
       page_range: parentSec ? parentSec.page_range : [1, 1],
     };
 
-    const updatedSections = [...etlData.parent_sections, newSection];
+    const updatedSections = [...sections, newSection];
     const updatedStats = {
       ...etlData.stats,
+      total_sections: updatedSections.length,
       total_parent_sections: updatedSections.length,
     };
 
     setEtlData({
       ...etlData,
+      sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
@@ -449,17 +578,21 @@ export function App() {
   // 6-3. Batch Clean Empty Sections Handler (Exclude sections with child sections)
   const handleBatchCleanEmptySections = () => {
     if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
 
     // 하위 섹션을 보유한 상위 부모 섹션 ID 집합
     const parentIdSet = new Set(
-      etlData.parent_sections
+      sections
         .map((s) => s.parent_section_id)
         .filter((id): id is string => Boolean(id))
     );
 
     // 청크가 없고 AND 하위 섹션도 없는 리프 섹션만 필터링
-    const emptySections = etlData.parent_sections.filter(
-      (s) => s.child_chunk_ids.length === 0 && !parentIdSet.has(s.id)
+    const emptySections = sections.filter(
+      (s) =>
+        (!s.parent_chunk_ids || s.parent_chunk_ids.length === 0) &&
+        (!s.child_chunk_ids || s.child_chunk_ids.length === 0) &&
+        !parentIdSet.has(s.id)
     );
 
     if (emptySections.length === 0) {
@@ -473,7 +606,7 @@ export function App() {
     if (!confirmed) return;
 
     const emptyIdSet = new Set(emptySections.map((s) => s.id));
-    const updatedSections = etlData.parent_sections.filter((s) => !emptyIdSet.has(s.id));
+    const updatedSections = sections.filter((s) => !emptyIdSet.has(s.id));
 
     if (selectedSectionId && emptyIdSet.has(selectedSectionId)) {
       setSelectedSectionId(null);
@@ -481,11 +614,13 @@ export function App() {
 
     const updatedStats = {
       ...etlData.stats,
+      total_sections: updatedSections.length,
       total_parent_sections: updatedSections.length,
     };
 
     setEtlData({
       ...etlData,
+      sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
@@ -507,7 +642,7 @@ export function App() {
     handleUpdateChunk(updatedChunk, false);
   };
 
-  // 8. Split Chunk Handler (Phase 3)
+  // 8. Split Chunk Handler (3-Tier Hierarchical)
   const handleSplitChunk = (
     targetChunkId: string,
     part1Text: string,
@@ -524,8 +659,8 @@ export function App() {
     const id1 = targetChunkId;
     const id2 = getNextChunkId(etlData.child_chunks, etlData.doc_id);
 
-    const words1 = part1Text.trim() ? part1Text.trim().split(/\s+/).length : 0;
-    const words2 = part2Text.trim() ? part2Text.trim().split(/\s+/).length : 0;
+    const words1 = estimateKoreanTokens(part1Text);
+    const words2 = estimateKoreanTokens(part2Text);
 
     const p1 = page1 || target.page_number || 1;
     const p2 = page2 || target.page_end || target.page_number || 1;
@@ -547,9 +682,15 @@ export function App() {
       p2
     );
 
+    const targetParentId = target.parent_chunk_id || target.parent_id || '';
+    const targetSectionId = target.section_id || '';
+
     const chunk1: ChildChunk = {
       ...target,
       chunk_id: id1,
+      parent_chunk_id: targetParentId,
+      parent_id: targetParentId,
+      section_id: targetSectionId,
       text: part1Text,
       token_estimate: words1,
       page_number: p1,
@@ -561,6 +702,9 @@ export function App() {
     const chunk2: ChildChunk = {
       ...target,
       chunk_id: id2,
+      parent_chunk_id: targetParentId,
+      parent_id: targetParentId,
+      section_id: targetSectionId,
       text: part2Text,
       token_estimate: words2,
       page_number: p2,
@@ -573,11 +717,46 @@ export function App() {
     const updatedChunks = [...etlData.child_chunks];
     updatedChunks.splice(targetIndex, 1, chunk1, chunk2);
 
-    // 2) Update parent section child_chunk_ids
-    const updatedSections = etlData.parent_sections.map((sec) => {
-      if (sec.id === target.parent_id) {
+    const chunkMap = new Map<string, ChildChunk>();
+    for (const c of updatedChunks) {
+      chunkMap.set(c.chunk_id, c);
+    }
+
+    // 2) Update parent_chunks: inherit parent_chunk_id and recompute parent text & tokens
+    const updatedParents = (etlData.parent_chunks || []).map((p) => {
+      const pid = p.parent_chunk_id || p.id;
+      if (pid === targetParentId) {
+        const newChildIds: string[] = [];
+        for (const cid of p.child_chunk_ids) {
+          if (cid === targetChunkId) {
+            newChildIds.push(chunk1.chunk_id, chunk2.chunk_id);
+          } else {
+            newChildIds.push(cid);
+          }
+        }
+        const childObjects = newChildIds.map((cid) => chunkMap.get(cid)).filter(Boolean) as ChildChunk[];
+        const parentText = childObjects.map((c) => c.text).join('\n\n');
+        const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+        const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
+
+        return {
+          ...p,
+          child_chunk_ids: newChildIds,
+          text: parentText,
+          token_estimate: estimateKoreanTokens(parentText),
+          page_range: [minP, maxP] as [number, number],
+          is_edited: true,
+        };
+      }
+      return p;
+    });
+
+    // 3) Update sections: update child_chunk_ids if present
+    const sectionsToUpdate = etlData.sections || etlData.parent_sections || [];
+    const updatedSections = sectionsToUpdate.map((sec) => {
+      if (sec.id === targetSectionId || sec.id === target.parent_id) {
         const newIds: string[] = [];
-        for (const cid of sec.child_chunk_ids) {
+        for (const cid of (sec.child_chunk_ids || [])) {
           if (cid === targetChunkId) {
             newIds.push(chunk1.chunk_id, chunk2.chunk_id);
           } else {
@@ -592,28 +771,31 @@ export function App() {
       return sec;
     });
 
-    // 3) Recalculate stats
+    // 4) Recalculate stats
     const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
     const updatedStats = {
       ...etlData.stats,
+      total_parent_chunks: updatedParents.length,
       total_child_chunks: updatedChunks.length,
       paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
       table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
-      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause').length,
       total_words: totalWords,
     };
 
     setEtlData({
       ...etlData,
       child_chunks: updatedChunks,
+      parent_chunks: updatedParents,
+      sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
     setIsDirty(true);
-    showToast(`청크(${targetChunkId})가 2개(p.${chunk1.page_number} / p.${chunk2.page_number})로 분할되었습니다.`);
+    showToast(`청크(${targetChunkId})가 2개(p.${chunk1.page_number} / p.${chunk2.page_number})로 분할되고 상위 Parent(${targetParentId})가 실시간 동기화되었습니다.`);
   };
 
-  // 9. Merge Chunks Handler (Phase 3)
+  // 9. Merge Chunks Handler (3-Tier Hierarchical with Auto-pruning)
   const handleMergeChunks = (
     chunkIds: string[],
     mergedText: string,
@@ -630,8 +812,9 @@ export function App() {
     if (selectedChunks.length < 2) return;
 
     const firstChunk = selectedChunks[0];
+    const primaryParentId = firstChunk.parent_chunk_id || firstChunk.parent_id || '';
+    const primarySectionId = firstChunk.section_id || '';
 
-    // 병합 시 첫 번째 청크의 ID를 승계하여 접미사(_merged) 팽창 방지
     let mergedId = customMergedId?.trim() || firstChunk.chunk_id;
     if (
       etlData.child_chunks.some(
@@ -641,7 +824,7 @@ export function App() {
       mergedId = getNextChunkId(etlData.child_chunks, etlData.doc_id);
     }
 
-    const words = mergedText.trim() ? mergedText.trim().split(/\s+/).length : 0;
+    const words = estimateKoreanTokens(mergedText);
     const minPage = pageStart || Math.min(...selectedChunks.map((c) => c.page_number || 1));
     const maxPage = pageEnd || Math.max(...selectedChunks.map((c) => c.page_end || c.page_number || 1));
     const finalEnd = maxPage > minPage ? maxPage : undefined;
@@ -667,6 +850,9 @@ export function App() {
     const mergedChunk: ChildChunk = {
       ...firstChunk,
       chunk_id: mergedId,
+      parent_chunk_id: primaryParentId,
+      parent_id: primaryParentId,
+      section_id: primarySectionId,
       text: mergedText,
       token_estimate: words,
       page_number: minPage,
@@ -676,7 +862,7 @@ export function App() {
       is_ignored: false,
     };
 
-    // 1) Replace first chunk with mergedChunk, remove other selected chunks
+    // 1) Replace first chunk with mergedChunk, remove other selected chunks from child_chunks
     const chunkIdsToRemove = new Set(chunkIds.slice(1));
     const updatedChunks: ChildChunk[] = [];
     for (let i = 0; i < etlData.child_chunks.length; i++) {
@@ -688,11 +874,55 @@ export function App() {
       }
     }
 
-    // 2) Update parent sections child_chunk_ids
+    const chunkMap = new Map<string, ChildChunk>();
+    for (const c of updatedChunks) {
+      chunkMap.set(c.chunk_id, c);
+    }
+
+    // 2) Update parent_chunks with Auto-pruning (자식 0개 Parent 자동 삭제)
+    const prunedParentIds = new Set<string>();
+    const survivingParents: ParentChunk[] = [];
+
+    for (const p of (etlData.parent_chunks || [])) {
+      const pid = p.parent_chunk_id || p.id || '';
+      let newChildIds = p.child_chunk_ids.filter((cid) => !chunkIdsToRemove.has(cid));
+
+      if (pid === primaryParentId || p.child_chunk_ids.includes(firstChunk.chunk_id)) {
+        newChildIds = newChildIds.map((cid) => (cid === firstChunk.chunk_id ? mergedChunk.chunk_id : cid));
+        if (!newChildIds.includes(mergedChunk.chunk_id)) {
+          newChildIds.push(mergedChunk.chunk_id);
+        }
+      }
+
+      // Auto-pruning check:
+      if (newChildIds.length === 0) {
+        prunedParentIds.add(pid);
+        continue;
+      }
+
+      const childObjects = newChildIds.map((cid) => chunkMap.get(cid)).filter(Boolean) as ChildChunk[];
+      const parentText = childObjects.map((c) => c.text).join('\n\n');
+      const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+      const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
+
+      survivingParents.push({
+        ...p,
+        child_chunk_ids: newChildIds,
+        text: parentText,
+        token_estimate: estimateKoreanTokens(parentText),
+        page_range: [minP, maxP] as [number, number],
+        is_edited: true,
+      });
+    }
+
+    // 3) Update sections: remove prunedParentIds and update child_chunk_ids
     const allSelectedSet = new Set(chunkIds);
-    const updatedSections = etlData.parent_sections.map((sec) => {
+    const sectionsToUpdate = etlData.sections || etlData.parent_sections || [];
+    const updatedSections = sectionsToUpdate.map((sec) => {
+      const newParentIds = (sec.parent_chunk_ids || []).filter((pid) => !prunedParentIds.has(pid));
+
       let containsFirst = false;
-      const filtered = sec.child_chunk_ids.filter((id) => {
+      const filteredChildren = (sec.child_chunk_ids || []).filter((id) => {
         if (id === firstChunk.chunk_id) {
           containsFirst = true;
           return true;
@@ -700,45 +930,150 @@ export function App() {
         return !allSelectedSet.has(id);
       });
 
-      if (containsFirst || sec.id === firstChunk.parent_id) {
-        const replaced = filtered.map((id) => (id === firstChunk.chunk_id ? mergedChunk.chunk_id : id));
+      let finalChildren = filteredChildren;
+      if (containsFirst || sec.id === primarySectionId) {
+        const replaced = filteredChildren.map((id) => (id === firstChunk.chunk_id ? mergedChunk.chunk_id : id));
         if (!replaced.includes(mergedChunk.chunk_id)) {
           replaced.push(mergedChunk.chunk_id);
         }
-        return {
-          ...sec,
-          child_chunk_ids: replaced,
-        };
+        finalChildren = replaced;
       }
 
       return {
         ...sec,
-        child_chunk_ids: filtered,
+        parent_chunk_ids: newParentIds,
+        child_chunk_ids: finalChildren,
       };
     });
 
-    // 3) Recalculate stats
+    // 4) Recalculate stats
     const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
     const updatedStats = {
       ...etlData.stats,
+      total_parent_chunks: survivingParents.length,
       total_child_chunks: updatedChunks.length,
       paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
       table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
-      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause').length,
       total_words: totalWords,
     };
 
     setEtlData({
       ...etlData,
       child_chunks: updatedChunks,
+      parent_chunks: survivingParents,
+      sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
     setIsDirty(true);
-    showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${mergedChunk.chunk_id}).`);
+
+    const pruneMsg = prunedParentIds.size > 0 ? ` (자식 청크가 0개인 Parent ${prunedParentIds.size}개 자동 정리됨)` : '';
+    showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${mergedChunk.chunk_id}).${pruneMsg}`);
   };
 
-  // 10. Batch Clean Empty Chunks Handler (Phase 3)
+  // 10. Parent Reassign Section Handler (Cascading Sync to Children)
+  const handleReassignParentSection = (parentChunkId: string, newSectionId: string) => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const parentChunks = etlData.parent_chunks || [];
+    const childChunks = etlData.child_chunks || [];
+
+    const targetParent = parentChunks.find(
+      (p) => (p.parent_chunk_id === parentChunkId) || (p.id === parentChunkId)
+    );
+    if (!targetParent) {
+      showToast(`대상 Parent 청크(${parentChunkId})를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const oldSectionId = targetParent.section_id;
+    if (oldSectionId === newSectionId) return;
+
+    const newSection = sections.find((s) => s.id === newSectionId);
+    if (!newSection) {
+      showToast(`지정할 신규 섹션(${newSectionId})을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const pid = targetParent.parent_chunk_id || targetParent.id || '';
+
+    // 1) Update target parent chunk's section_id
+    const updatedParents = parentChunks.map((p) => {
+      if ((p.parent_chunk_id || p.id) === pid) {
+        return {
+          ...p,
+          section_id: newSectionId,
+          is_edited: true,
+        };
+      }
+      return p;
+    });
+
+    // 2) Cascading Sync: Update all child chunks belonging to targetParent
+    const targetChildIdSet = new Set(targetParent.child_chunk_ids);
+    const updatedChildren = childChunks.map((c) => {
+      const belongs =
+        targetChildIdSet.has(c.chunk_id) ||
+        c.parent_chunk_id === pid ||
+        c.parent_id === pid;
+
+      if (belongs) {
+        const newBreadcrumbs = targetParent.title
+          ? [...(newSection.breadcrumbs || [newSection.title]), targetParent.title]
+          : [...(newSection.breadcrumbs || [newSection.title])];
+
+        return {
+          ...c,
+          section_id: newSectionId,
+          breadcrumbs: newBreadcrumbs,
+          is_edited: true,
+        };
+      }
+      return c;
+    });
+
+    // 3) Update sections: parent_chunk_ids & child_chunk_ids
+    const updatedSections = sections.map((sec) => {
+      if (sec.id === oldSectionId) {
+        return {
+          ...sec,
+          parent_chunk_ids: (sec.parent_chunk_ids || []).filter((id) => id !== pid),
+          child_chunk_ids: (sec.child_chunk_ids || []).filter((id) => !targetChildIdSet.has(id)),
+        };
+      }
+      if (sec.id === newSectionId) {
+        const pIds = [...(sec.parent_chunk_ids || [])];
+        if (!pIds.includes(pid)) pIds.push(pid);
+
+        const cIds = [...(sec.child_chunk_ids || [])];
+        for (const cid of targetParent.child_chunk_ids) {
+          if (!cIds.includes(cid)) cIds.push(cid);
+        }
+
+        return {
+          ...sec,
+          parent_chunk_ids: pIds,
+          child_chunk_ids: cIds,
+        };
+      }
+      return sec;
+    });
+
+    setEtlData({
+      ...etlData,
+      parent_chunks: updatedParents,
+      child_chunks: updatedChildren,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+    });
+    setIsDirty(true);
+    showToast(
+      `Parent(${pid}) 및 하위 ${targetParent.child_chunk_ids.length}개 청크의 상위 섹션이 '${newSection.title}'(으)로 재지정되었습니다.`
+    );
+  };
+
+  // 11. Batch Clean Empty Chunks Handler (Phase 3)
   const handleBatchCleanEmptyChunks = () => {
     if (!etlData) return;
     const emptyChunks = etlData.child_chunks.filter(
@@ -774,21 +1109,24 @@ export function App() {
     showToast(`🧹 ${emptyChunks.length}개의 빈 청크를 임베딩 제외 처리했습니다.`);
   };
 
-  // 11. Re-index All IDs Handler (ID 일괄 정규화 및 재정렬)
+  // 12. Re-index All IDs Handler (3-Tier ID 일괄 물리적 순서 재정렬)
   const handleReindexIds = () => {
     if (!etlData) return;
+    const secCount = (etlData.sections || etlData.parent_sections || []).length;
+    const parentCount = (etlData.parent_chunks || []).length;
+    const childCount = etlData.child_chunks.length;
     const confirmed = window.confirm(
-      `전체 섹션과 청크의 ID를 문서 순서대로 정규화(s01~, c001~)하여 재정렬하시겠습니까?\n(총 ${etlData.parent_sections.length}개 섹션, ${etlData.child_chunks.length}개 청크)\n\n※ 분할/병합 후 불연속해진 번호가 깨끗하게 1번부터 순차적으로 정돈됩니다.`
+      `전체 계층(Section s01~, Parent p001~, Child c001~) ID를 문서 물리적 순서대로 일괄 재정렬하시겠습니까?\n(총 ${secCount}개 섹션, ${parentCount}개 Parent, ${childCount}개 Child)\n\n※ 분할/병합/섹션 재지정 후 불연속해진 번호가 깨끗하게 순차적으로 정돈됩니다.`
     );
     if (!confirmed) return;
 
     const reindexed = reindexEtlData(etlData);
     setEtlData(reindexed);
     setIsDirty(true);
-    showToast('전체 섹션과 청크 ID가 순서대로 성공적으로 재정렬되었습니다. 변경 사항을 저장하려면 [수정본 저장]을 클릭하세요.');
+    showToast('전체 계층(Section/Parent/Child) ID가 물리적 순서대로 성공적으로 재정렬되었습니다.');
   };
 
-  // 12. Save ETL Result to Backend & Disk
+  // 13. Save ETL Result to Backend & Disk
   const handleSaveEtl = async () => {
     if (!etlData) return;
     setIsSaving(true);
@@ -804,7 +1142,7 @@ export function App() {
     }
   };
 
-  // 12. Reset ETL Result to Original
+  // 14. Reset ETL Result to Original
   const handleResetEtl = async () => {
     const confirmed = window.confirm('모든 수정 내용을 폐기하고 원본 파싱 결과로 복원하시겠습니까?');
     if (!confirmed) return;
@@ -812,7 +1150,7 @@ export function App() {
     setIsResetting(true);
     try {
       const original = await resetEtlResult(strategy);
-      setEtlData(original);
+      setEtlData(normalizeEtlData(original));
       setIsDirty(false);
       setSelectedSectionId(null);
       showToast('🔄 원본 파싱 데이터로 초기화되었습니다.');
@@ -907,7 +1245,7 @@ export function App() {
                 {/* Left: Heading Hierarchy Tree */}
                 <div className="lg:col-span-4">
                   <HierarchyTree
-                    sections={etlData?.parent_sections || []}
+                    sections={etlData?.sections || etlData?.parent_sections || []}
                     selectedSectionId={selectedSectionId}
                     onSelectSection={setSelectedSectionId}
                     isLoading={isLoadingEtl}
@@ -918,7 +1256,7 @@ export function App() {
                 <div className="lg:col-span-8">
                   <ChunkExplorer
                     chunks={etlData?.child_chunks || []}
-                    parentSections={etlData?.parent_sections || []}
+                    parentSections={etlData?.sections || etlData?.parent_sections || []}
                     selectedSectionId={selectedSectionId}
                     onClearSectionFilter={() => setSelectedSectionId(null)}
                     onOpenJsonlModal={setActiveModalChunk}
@@ -933,8 +1271,9 @@ export function App() {
           /* Chunk Studio Mode: 3-Column Focus IDE Workspace */
           <div className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col min-h-0">
             <ChunkStudio
-              parentSections={etlData?.parent_sections || []}
+              parentSections={etlData?.sections || etlData?.parent_sections || []}
               childChunks={etlData?.child_chunks || []}
+              parentChunks={etlData?.parent_chunks || []}
               selectedSectionId={selectedSectionId}
               onSelectSection={setSelectedSectionId}
               onUpdateChunk={handleUpdateChunk}
@@ -946,6 +1285,7 @@ export function App() {
               onOpenJsonlModal={setActiveModalChunk}
               onSplitChunk={handleSplitChunk}
               onMergeChunks={handleMergeChunks}
+              onReassignParentSection={handleReassignParentSection}
               onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
               onReindexIds={handleReindexIds}
               isLoading={isLoadingEtl}
@@ -957,14 +1297,15 @@ export function App() {
       {/* JSONL Record Modal */}
       <JsonlModal
         chunk={activeModalChunk}
-        parentSections={etlData?.parent_sections || []}
+        parentSections={etlData?.sections || etlData?.parent_sections || []}
+        parentChunks={etlData?.parent_chunks || []}
         onClose={() => setActiveModalChunk(null)}
       />
 
       {/* Chunk Edit Modal (Dashboard compatible) */}
       <ChunkEditModal
         chunk={editingChunk}
-        parentSections={etlData?.parent_sections || []}
+        parentSections={etlData?.sections || etlData?.parent_sections || []}
         onClose={() => setEditingChunk(null)}
         onSave={handleUpdateChunk}
       />

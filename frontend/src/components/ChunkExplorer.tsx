@@ -161,7 +161,7 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
             <ChunkCard
               key={chunk.chunk_id}
               chunk={chunk}
-              parentSection={parentMap.get(chunk.parent_id)}
+              parentSection={parentMap.get(chunk.section_id || chunk.parent_id || '')}
               onOpenJsonlModal={onOpenJsonlModal}
               onEditChunk={onEditChunk}
             />

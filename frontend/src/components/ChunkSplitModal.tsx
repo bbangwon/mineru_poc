@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { ChildChunk } from '../types';
+import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkSplitModalProps {
   chunk: ChildChunk | null;
@@ -33,10 +34,9 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
   const [page1, setPage1] = useState<number>(chunk?.page_number || 1);
   const [page2, setPage2] = useState<number>(chunk?.page_end || chunk?.page_number || 1);
 
-  // Helper: Calculate word count
+  // Helper: Calculate Korean-aware token estimate
   const countWords = (text: string) => {
-    if (!text || !text.trim()) return 0;
-    return text.trim().split(/\s+/).length;
+    return estimateKoreanTokens(text);
   };
 
   // Preset: Split at delimiter closest to text midpoint
@@ -257,17 +257,17 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono text-slate-500">
-                    ~{part1Words} words ({part1.length}자)
+                    ~{part1Words} tokens ({part1.length}자)
                   </span>
-                  {part1Words > 800 ? (
+                  {part1Words > 512 ? (
                     <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
                       <AlertTriangle className="w-3 h-3 text-amber-600" />
-                      800+ words
+                      512+ tokens
                     </span>
                   ) : part1Words < 20 && part1Words > 0 ? (
                     <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
                       <Info className="w-3 h-3 text-sky-600" />
-                      &lt;20 words
+                      &lt;20 tokens
                     </span>
                   ) : part1Words >= 20 ? (
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
@@ -311,17 +311,17 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono text-slate-500">
-                    ~{part2Words} words ({part2.length}자)
+                    ~{part2Words} tokens ({part2.length}자)
                   </span>
-                  {part2Words > 800 ? (
+                  {part2Words > 512 ? (
                     <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
                       <AlertTriangle className="w-3 h-3 text-amber-600" />
-                      800+ words
+                      512+ tokens
                     </span>
                   ) : part2Words < 20 && part2Words > 0 ? (
                     <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
                       <Info className="w-3 h-3 text-sky-600" />
-                      &lt;20 words
+                      &lt;20 tokens
                     </span>
                   ) : part2Words >= 20 ? (
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">

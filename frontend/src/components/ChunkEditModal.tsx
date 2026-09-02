@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree, BookOpen } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { syncChunkPageMetadata, formatChunkPageFull } from '../utils/pageUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkEditModalProps {
   chunk: ChildChunk | null;
@@ -17,7 +18,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   onSave,
 }) => {
   const [text, setText] = useState(chunk?.text || '');
-  const [parentId, setParentId] = useState(chunk?.parent_id || '');
+  const [parentId, setParentId] = useState(chunk?.parent_chunk_id || chunk?.parent_id || '');
   const [pageNumber, setPageNumber] = useState<number>(chunk?.page_number || 1);
   const [pageEnd, setPageEnd] = useState<number | ''>(chunk?.page_end || '');
   const [isIgnored, setIsIgnored] = useState(Boolean(chunk?.is_ignored));
@@ -47,7 +48,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
 
   // Real-time word / token estimate
   const currentTextToCount = activeTab === 'text' ? text : rawHtml;
-  const wordCount = currentTextToCount.trim() ? currentTextToCount.trim().split(/\s+/).length : 0;
+  const wordCount = estimateKoreanTokens(currentTextToCount);
   const charCount = currentTextToCount.length;
 
   const handleApply = () => {
@@ -71,6 +72,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
     const updated: ChildChunk = {
       ...chunk,
       text: text,
+      parent_chunk_id: parentId,
       parent_id: parentId,
       page_number: startPage,
       page_end: endPageNum,

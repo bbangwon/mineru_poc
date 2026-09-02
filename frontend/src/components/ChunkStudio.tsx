@@ -31,15 +31,17 @@ import {
   Trash2,
   ListOrdered,
 } from 'lucide-react';
-import type { ChildChunk, ParentSection } from '../types';
+import type { ChildChunk, ParentSection, ParentChunk } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
 import { AddSectionModal } from './AddSectionModal';
 import { formatChunkPage, formatChunkPageFull } from '../utils/pageUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
   childChunks: ChildChunk[];
+  parentChunks?: ParentChunk[];
   selectedSectionId: string | null;
   onSelectSection: (id: string | null) => void;
   onUpdateChunk: (updatedChunk: ChildChunk, silent?: boolean) => void;
@@ -67,6 +69,7 @@ interface ChunkStudioProps {
     pageStart?: number,
     pageEnd?: number
   ) => void;
+  onReassignParentSection?: (parentChunkId: string, newSectionId: string) => void;
   onBatchCleanEmptyChunks?: () => void;
   onReindexIds?: () => void;
   isLoading: boolean;
@@ -75,6 +78,7 @@ interface ChunkStudioProps {
 export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   parentSections,
   childChunks,
+  parentChunks,
   selectedSectionId,
   onSelectSection,
   onUpdateChunk,
@@ -86,6 +90,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onOpenJsonlModal,
   onSplitChunk,
   onMergeChunks,
+  onReassignParentSection,
   onBatchCleanEmptyChunks,
   onReindexIds,
   isLoading,
@@ -126,31 +131,41 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return parentSections.filter((s) => s.title.toLowerCase().includes(term));
   }, [parentSections, sectionSearch]);
 
-  // Linter statistics for the entire document
+  // Linter statistics for the entire document (Child 512 / Parent 2048 standards)
   const linterStats = useMemo(() => {
     let emptyCount = 0;
     let overCount = 0;
     let underCount = 0;
     for (const c of childChunks) {
-      const words = c.token_estimate || (c.text ? c.text.trim().split(/\s+/).length : 0);
+      const isTable = c.chunk_type === 'table' || Boolean(c.is_atomic_table);
+      const words = c.token_estimate || (c.text ? estimateKoreanTokens(c.text) : 0);
       const isEmpty = (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim());
       if (isEmpty) {
         emptyCount++;
-      } else if (words > 800) {
+      } else if (!isTable && words > 512) {
         overCount++;
-      } else if (words < 20) {
+      } else if (!isTable && words > 0 && words < 20) {
         underCount++;
       }
     }
-    return { emptyCount, overCount, underCount, totalWarnings: emptyCount + overCount + underCount };
-  }, [childChunks]);
+    const parentOverCount = (parentChunks || []).filter((p) => (p.token_estimate || 0) > 2048).length;
+    return {
+      emptyCount,
+      overCount,
+      underCount,
+      parentOverCount,
+      totalWarnings: emptyCount + overCount + underCount + parentOverCount,
+    };
+  }, [childChunks, parentChunks]);
 
   // Filtered Chunks for Column 2
   const filteredChunks = useMemo(() => {
     let result = childChunks;
 
     if (selectedSectionId) {
-      result = result.filter((c) => c.parent_id === selectedSectionId);
+      result = result.filter(
+        (c) => c.section_id === selectedSectionId || c.parent_id === selectedSectionId
+      );
     }
 
     if (typeFilter !== 'all') {
@@ -163,9 +178,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       result = result.filter((c) => Boolean(c.is_ignored));
     } else if (statusFilter === 'linter') {
       result = result.filter((c) => {
-        const words = c.token_estimate || (c.text ? c.text.trim().split(/\s+/).length : 0);
+        const isTable = c.chunk_type === 'table' || Boolean(c.is_atomic_table);
+        const words = c.token_estimate || (c.text ? estimateKoreanTokens(c.text) : 0);
         const isEmpty = (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim());
-        return words > 800 || (words > 0 && words < 20) || isEmpty;
+        return (!isTable && words > 512) || (!isTable && !isEmpty && words > 0 && words < 20) || isEmpty;
       });
     } else if (statusFilter === 'empty') {
       result = result.filter((c) => (!c.text || !c.text.trim()) && (!c.raw_html || !c.raw_html.trim()));
@@ -332,7 +348,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     if (field === 'text' || field === 'raw_html') {
       const textToCount = field === 'text' ? value : updated.text;
       const count = textToCount && typeof textToCount === 'string' && textToCount.trim()
-        ? textToCount.trim().split(/\s+/).length
+        ? estimateKoreanTokens(textToCount)
         : 0;
       updated.token_estimate = count;
     }
@@ -362,14 +378,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   };
 
   // Active section name for breadcrumb/filter
-  const activeParent = activeChunk ? parentMap.get(activeChunk.parent_id) : null;
+  const activeParent = activeChunk ? parentMap.get(activeChunk.section_id || activeChunk.parent_id || '') : null;
   const filterParent = selectedSectionId ? parentMap.get(selectedSectionId) : null;
 
   // Real-time character & token count
+  const isTableChunk = activeChunk?.chunk_type === 'table' || Boolean(activeChunk?.is_atomic_table);
   const activeCharCount = activeChunk?.text?.length || 0;
   const activeWordCount = activeChunk?.token_estimate || 0;
-  const isOverTokenLimit = activeWordCount > 800 || activeCharCount > 1000;
-  const isUnderTokenLimit = activeWordCount > 0 && activeWordCount < 20;
+  const isOverTokenLimit = !isTableChunk && activeWordCount > 512;
+  const isUnderTokenLimit = !isTableChunk && activeWordCount > 0 && activeWordCount < 20;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-100/70 rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -870,16 +887,16 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               filteredChunks.map((chunk) => {
                 const isSelected = activeChunkId === chunk.chunk_id;
                 const isChecked = selectedChunkIds.has(chunk.chunk_id);
-                const isTable = chunk.chunk_type === 'table';
-                const isArticle = chunk.chunk_type === 'article';
+                const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+                const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
                 const isIgnored = Boolean(chunk.is_ignored);
                 const isEdited = Boolean(chunk.is_edited);
-                const parent = parentMap.get(chunk.parent_id);
+                const parent = parentMap.get(chunk.section_id || chunk.parent_id || '');
 
-                const cWords = chunk.token_estimate || (chunk.text ? chunk.text.trim().split(/\s+/).length : 0);
+                const cWords = chunk.token_estimate || (chunk.text ? estimateKoreanTokens(chunk.text) : 0);
                 const isCEmpty = (!chunk.text || !chunk.text.trim()) && (!chunk.raw_html || !chunk.raw_html.trim());
-                const isCOver = cWords > 800;
-                const isCUnder = !isCEmpty && cWords > 0 && cWords < 20;
+                const isCOver = !isTable && cWords > 512;
+                const isCUnder = !isTable && !isCEmpty && cWords > 0 && cWords < 20;
 
                 return (
                   <div
@@ -960,12 +977,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         ) : isCOver ? (
                           <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
                             <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
-                            800+ words
+                            512+ tokens
                           </span>
                         ) : isCUnder ? (
                           <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
                             <Info className="w-2.5 h-2.5 text-sky-600" />
-                            &lt;20 words
+                            &lt;20 tokens
                           </span>
                         ) : null}
                       </div>
@@ -997,10 +1014,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                     {/* Footer Row: Parent Section & Token count */}
                     <div className="pt-2 mt-1.5 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                      <span className="truncate max-w-[170px]" title={parent?.title}>
-                        {parent?.title || chunk.parent_id}
+                      <span className="truncate max-w-[170px]" title={parent?.title || chunk.section_id || chunk.parent_id}>
+                        {parent?.title || chunk.section_id || chunk.parent_id}
                       </span>
-                      <span>~{chunk.token_estimate} words</span>
+                      <span>~{cWords} tokens</span>
                     </div>
                   </div>
                 );
@@ -1076,7 +1093,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     글자 수: <strong className="text-slate-800 font-semibold">{activeCharCount}</strong>자
                   </span>
                   <span>
-                    추정 토큰/단어: <strong className="text-indigo-600 font-semibold">~{activeWordCount}</strong> words
+                    추정 토큰: <strong className="text-indigo-600 font-semibold">~{activeWordCount}</strong> tokens
                   </span>
                 </div>
 
@@ -1084,7 +1101,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   <div className="flex items-center gap-1.5 font-sans">
                     <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px] flex items-center gap-1 font-semibold">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      800자 초과 (분할 권장)
+                      512 토큰 초과 (분할 권장)
                     </span>
                     {onSplitChunk && activeChunk.chunk_type !== 'table' && (
                       <button
@@ -1101,7 +1118,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 ) : isUnderTokenLimit ? (
                   <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">
                     <Info className="w-3.5 h-3.5 text-sky-600" />
-                    20단어 미만 (2열에서 병합 권장)
+                    20 토큰 미만 (2열에서 병합 권장)
                   </span>
                 ) : (
                   <span className="text-emerald-700 font-sans text-[11px] flex items-center gap-1 font-medium">
@@ -1126,13 +1143,28 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                   {/* Parent Section Reassign */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                      <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
-                      부모 섹션 재할당
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
+                        상위 섹션 재할당
+                      </span>
+                      {activeChunk.parent_chunk_id && (
+                        <span className="font-mono text-[10px] font-normal text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">
+                          Parent: {activeChunk.parent_chunk_id}
+                        </span>
+                      )}
                     </label>
                     <select
-                      value={activeChunk.parent_id}
-                      onChange={(e) => handleFieldChange('parent_id', e.target.value)}
+                      value={activeChunk.section_id || activeChunk.parent_id}
+                      onChange={(e) => {
+                        const newSecId = e.target.value;
+                        const pid = activeChunk.parent_chunk_id || activeChunk.parent_id;
+                        if (onReassignParentSection && pid) {
+                          onReassignParentSection(pid, newSecId);
+                        } else {
+                          handleFieldChange('parent_id', newSecId);
+                        }
+                      }}
                       className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     >
                       {parentSections.map((sec) => (
