@@ -771,13 +771,14 @@ class HierarchicalChunker:
 
         current_text_units: List[str] = []
         current_tokens = 0
-        current_page = 1
+        current_start_page: Optional[int] = None
+        current_end_page: Optional[int] = None
         current_breadcrumbs: List[str] = []
         current_meta: Dict[str, Any] = {}
         current_chunk_type = "paragraph"
 
         def flush_child_chunk():
-            nonlocal child_counter, current_text_units, current_tokens
+            nonlocal child_counter, current_text_units, current_tokens, current_start_page, current_end_page
             if not current_text_units:
                 return
 
@@ -785,13 +786,24 @@ class HierarchicalChunker:
             if not full_child_text:
                 current_text_units = []
                 current_tokens = 0
+                current_start_page = None
+                current_end_page = None
                 return
 
             child_counter += 1
             cid = f"{self.doc_id}_c{child_counter:03d}"
+            start_p = current_start_page if current_start_page is not None else 1
+            end_p = current_end_page if current_end_page is not None else start_p
+            if end_p < start_p:
+                end_p = start_p
+            pages_list = list(range(start_p, end_p + 1))
+
             meta = dict(current_meta)
             meta["doc_title"] = doc_title
-            meta["page"] = current_page
+            meta["page"] = start_p
+            meta["page_start"] = start_p
+            meta["page_end"] = end_p
+            meta["pages"] = pages_list
 
             child_chunks.append({
                 "chunk_id": cid,
@@ -801,7 +813,8 @@ class HierarchicalChunker:
                 "chunk_type": current_chunk_type,
                 "text": full_child_text,
                 "token_estimate": self.estimate_korean_tokens(full_child_text),
-                "page_number": current_page,
+                "page_number": start_p,
+                "page_end": end_p,
                 "breadcrumbs": list(current_breadcrumbs),
                 "is_table": False,
                 "is_atomic_table": False,
@@ -810,6 +823,8 @@ class HierarchicalChunker:
 
             current_text_units = []
             current_tokens = 0
+            current_start_page = None
+            current_end_page = None
 
         for item in items:
             i_type = item.get("type", "text")
@@ -824,6 +839,11 @@ class HierarchicalChunker:
                 footnote = item.get("footnote", "")
                 img_path = item.get("image_path", "")
                 table_type = item.get("table_type", "simple_table")
+                tbl_start_p = item.get("page", 1)
+                tbl_end_p = item.get("page_end", tbl_start_p)
+                if tbl_end_p < tbl_start_p:
+                    tbl_end_p = tbl_start_p
+                tbl_pages = list(range(tbl_start_p, tbl_end_p + 1))
 
                 search_text = self.normalize_text_for_embedding(
                     self.generate_table_search_text(raw_html, caption, footnote)
@@ -845,7 +865,8 @@ class HierarchicalChunker:
                     "image_path": img_path,
                     "table_type": table_type,
                     "token_estimate": self.estimate_korean_tokens(search_text),
-                    "page_number": page_num,
+                    "page_number": tbl_start_p,
+                    "page_end": tbl_end_p,
                     "breadcrumbs": list(breadcrumbs),
                     "is_table": True,
                     "is_atomic_table": True,
@@ -855,7 +876,10 @@ class HierarchicalChunker:
                         "is_table": True,
                         "is_atomic_table": True,
                         "has_image": bool(img_path),
-                        "page": page_num,
+                        "page": tbl_start_p,
+                        "page_start": tbl_start_p,
+                        "page_end": tbl_end_p,
+                        "pages": tbl_pages,
                     }
                 })
                 continue
@@ -863,7 +887,6 @@ class HierarchicalChunker:
             if i_type == "article_start":
                 flush_child_chunk()
                 current_breadcrumbs = breadcrumbs
-                current_page = page_num
                 current_chunk_type = "article_clause"
                 current_meta = {
                     "type": "article",
@@ -878,15 +901,16 @@ class HierarchicalChunker:
                     u_tokens = self.estimate_korean_tokens(u)
                     if current_tokens + u_tokens > 512 and current_text_units:
                         flush_child_chunk()
+                    if current_start_page is None:
+                        current_start_page = page_num
+                    current_end_page = page_num
                     current_text_units.append(u)
                     current_tokens += u_tokens
-                    current_page = page_num
                 continue
 
             if i_type == "heading_h3":
                 flush_child_chunk()
                 current_breadcrumbs = breadcrumbs + [item.get("title", "")]
-                current_page = page_num
                 current_chunk_type = "paragraph"
                 current_meta = {"heading": item.get("title", "")}
                 continue
@@ -894,16 +918,17 @@ class HierarchicalChunker:
             raw_text = item.get("text", "")
             if not current_breadcrumbs:
                 current_breadcrumbs = breadcrumbs
-            current_page = page_num
 
             units = self.split_text_into_units(raw_text, is_legal=is_legal, max_tokens=512)
             for u in units:
                 u_tokens = self.estimate_korean_tokens(u)
                 if current_tokens + u_tokens > 512 and current_text_units:
                     flush_child_chunk()
+                if current_start_page is None:
+                    current_start_page = page_num
+                current_end_page = page_num
                 current_text_units.append(u)
                 current_tokens += u_tokens
-                current_page = page_num
 
         flush_child_chunk()
         return child_chunks, child_counter

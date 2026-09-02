@@ -428,6 +428,51 @@ class TestHierarchicalChunker(unittest.TestCase):
         for parent in etl_res["parent_chunks"]:
             self.assertIn("\n", parent["text"], f"Parent chunk {parent['parent_chunk_id']} should maintain structural newlines")
 
+    def test_multi_page_child_chunk_range(self):
+        # 3페이지(page_idx=2)부터 5페이지(page_idx=4)까지 짧은 텍스트가 연속으로 들어와 하나의 청크로 합쳐지는 시나리오
+        sample_content_list = [
+            {"type": "text", "text": "제1장 총칙", "text_level": 1, "page_idx": 2},
+            {"type": "text", "text": "3페이지의 첫 번째 문장입니다.", "page_idx": 2},
+            {"type": "text", "text": "4페이지의 두 번째 문장입니다.", "page_idx": 3},
+            {"type": "text", "text": "5페이지의 세 번째 문장입니다.", "page_idx": 4},
+        ]
+        chunker = HierarchicalChunker(doc_id="multipage_doc")
+        etl_res = chunker.chunk_content_list(sample_content_list, doc_title="다중페이지테스트", strategy="general")
+
+        child_chunks = etl_res["child_chunks"]
+        self.assertEqual(len(child_chunks), 1)
+        chunk = child_chunks[0]
+
+        # 0-indexed page_idx: 2 -> 3페이지, 4 -> 5페이지
+        self.assertEqual(chunk["page_number"], 3)
+        self.assertEqual(chunk["page_end"], 5)
+        self.assertEqual(chunk["metadata"]["page"], 3)
+        self.assertEqual(chunk["metadata"]["page_start"], 3)
+        self.assertEqual(chunk["metadata"]["page_end"], 5)
+        self.assertEqual(chunk["metadata"]["pages"], [3, 4, 5])
+
+    def test_multi_page_child_chunk_range_legal(self):
+        # 법률 문서에서 조항이 3페이지부터 5페이지까지 걸쳐 있는 시나리오
+        sample_content_list = [
+            {"type": "text", "text": "제1장 총칙", "text_level": 1, "page_idx": 2},
+            {"type": "text", "text": "제1조(목적) ① 3페이지의 제1항 내용입니다.", "page_idx": 2},
+            {"type": "text", "text": "② 4페이지의 제2항 내용입니다.", "page_idx": 3},
+            {"type": "text", "text": "③ 5페이지의 제3항 내용입니다.", "page_idx": 4},
+        ]
+        chunker = HierarchicalChunker(doc_id="multipage_legal_doc")
+        etl_res = chunker.chunk_content_list(sample_content_list, doc_title="법률다중페이지테스트", strategy="legal")
+
+        child_chunks = etl_res["child_chunks"]
+        self.assertEqual(len(child_chunks), 1)
+        chunk = child_chunks[0]
+
+        self.assertEqual(chunk["page_number"], 3)
+        self.assertEqual(chunk["page_end"], 5)
+        self.assertEqual(chunk["metadata"]["page"], 3)
+        self.assertEqual(chunk["metadata"]["page_start"], 3)
+        self.assertEqual(chunk["metadata"]["page_end"], 5)
+        self.assertEqual(chunk["metadata"]["pages"], [3, 4, 5])
+
 
 if __name__ == "__main__":
     unittest.main()
