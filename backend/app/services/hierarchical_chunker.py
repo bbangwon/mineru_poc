@@ -77,6 +77,61 @@ class HierarchicalChunker:
         return f"d_{h}"
 
     @staticmethod
+    def normalize_text_for_embedding(text: str) -> str:
+        """
+        임베딩 및 키워드 검색(Child Chunk) 대상 텍스트 정규화.
+        줄바꿈과 연속 공백을 모두 단일 공백으로 치환하여 단어 잘림과 검색 왜곡을 방지합니다.
+        1. 영문/숫자 하이픈 줄바꿈 복원: word-\\nbreak -> wordbreak
+        2. 모든 줄바꿈(\\r, \\n) 및 연속 공백을 단일 공백(' ')으로 치환
+        """
+        if not text:
+            return ""
+        # 1. 영문 하이픈 줄바꿈 복원 (e.g., 'multi-\nlingual' -> 'multilingual')
+        text = re.sub(r'(\w+)-\s*[\r\n]+\s*(\w+)', r'\1\2', text)
+        # 2. 모든 개행 및 공백을 단일 공백으로 치환
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
+    @staticmethod
+    def normalize_parent_text(text: str) -> str:
+        """
+        LLM 답변 생성용(Parent Chunk) 문맥 텍스트 정규화.
+        - 문단 간 구분(\\n\\n) 및 목록 번호/조항 앞 개행은 보존
+        - 문장 중간에 너비 한계로 인해 들어간 단순 줄바꿈은 단일 공백으로 연결
+        """
+        if not text:
+            return ""
+        # 1. 영문 하이픈 줄바꿈 복원
+        text = re.sub(r'(\w+)-\s*[\r\n]+\s*(\w+)', r'\1\2', text)
+
+        # 2. 단락 단위(\\n\\s*\\n)로 분할
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+        cleaned_paragraphs = []
+
+        for para in paragraphs:
+            lines = [l.strip() for l in para.split('\n') if l.strip()]
+            if not lines:
+                continue
+
+            para_parts = []
+            for line in lines:
+                # 목록 번호, 조항, 불릿, 헤딩으로 시작하는지 확인
+                # 예: ①~⑳, 1., (1), [제1조], 제1조, -, *, •, # 등
+                is_structural_line = bool(re.match(r'^(?:[①-⑳]|\d+\.|\(\d+\)|\[[^\]]+\]|제\s*\d+\s*조|[-*•※#])\s*', line))
+
+                if is_structural_line and para_parts:
+                    para_parts.append('\n' + line)
+                else:
+                    if para_parts and not para_parts[-1].endswith('\n'):
+                        para_parts.append(' ' + line)
+                    else:
+                        para_parts.append(line)
+
+            cleaned_paragraphs.append(''.join(para_parts).strip())
+
+        return '\n\n'.join(cleaned_paragraphs).strip()
+
+    @staticmethod
     def estimate_korean_tokens(text: str) -> int:
         """
         한국어 서브워드/BPE 특성을 반영한 표준 토큰 추정 공식:
@@ -102,6 +157,9 @@ class HierarchicalChunker:
         clean_text = text.strip()
         if not clean_text:
             return []
+
+        # 영문/숫자 하이픈 줄바꿈 사전 복원 (e.g. multi-\nlingual -> multilingual)
+        clean_text = re.sub(r'(\w+)-\s*[\r\n]+\s*(\w+)', r'\1\2', clean_text)
 
         # 1단계: 법률 모드일 경우 항·호 단위 1차 분할
         if is_legal:
@@ -723,7 +781,7 @@ class HierarchicalChunker:
             if not current_text_units:
                 return
 
-            full_child_text = "\n".join(current_text_units).strip()
+            full_child_text = self.normalize_text_for_embedding(" ".join(current_text_units))
             if not full_child_text:
                 current_text_units = []
                 current_tokens = 0
@@ -767,7 +825,9 @@ class HierarchicalChunker:
                 img_path = item.get("image_path", "")
                 table_type = item.get("table_type", "simple_table")
 
-                search_text = self.generate_table_search_text(raw_html, caption, footnote)
+                search_text = self.normalize_text_for_embedding(
+                    self.generate_table_search_text(raw_html, caption, footnote)
+                )
 
                 child_counter += 1
                 cid = f"{self.doc_id}_c{child_counter:03d}"
@@ -890,7 +950,8 @@ class HierarchicalChunker:
             first_c = current_children[0]
             bc_str = " > ".join(first_c.get("breadcrumbs", [sec_title]))
             context_header = f"[{bc_str}]"
-            parent_full_text = f"{context_header}\n{body_text}".strip()
+            raw_parent_text = f"{context_header}\n\n{body_text}".strip()
+            parent_full_text = self.normalize_parent_text(raw_parent_text)
 
             title_val = current_parent_title or first_c.get("metadata", {}).get("article_display") or sec_title
 

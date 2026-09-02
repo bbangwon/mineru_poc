@@ -363,6 +363,71 @@ class TestHierarchicalChunker(unittest.TestCase):
             self.assertIn("breadcrumbs_str", record)
             self.assertGreater(len(record["parent_context_text"]), 0)
 
+    def test_normalize_text_for_embedding(self):
+        # 1. Hyphenated word across line break
+        raw_text = "This is a multi-\nlingual embedding model test."
+        norm = HierarchicalChunker.normalize_text_for_embedding(raw_text)
+        self.assertEqual(norm, "This is a multilingual embedding model test.")
+
+        # 2. Korean sentence with line breaks and multiple spaces
+        korean_raw = "제1조(목적) 이 조례는 청년의\n\n권익증진과  사회참여를\n보장함을 목적으로 한다."
+        norm_k = HierarchicalChunker.normalize_text_for_embedding(korean_raw)
+        self.assertEqual(norm_k, "제1조(목적) 이 조례는 청년의 권익증진과 사회참여를 보장함을 목적으로 한다.")
+        self.assertNotIn("\n", norm_k)
+
+    def test_normalize_parent_text(self):
+        parent_raw = (
+            "[취업규칙 > 제1장]\n\n"
+            "제1조(목적) 이 규칙은 회사의\n업무 능률 향상을 목적으로 한다.\n\n"
+            "제2조(정의) 용어의 정의는 다음과 같다.\n"
+            "1. 근로자란 임금을 목적으로\n근로를 제공하는 자를 말한다.\n"
+            "2. 사용자란 사업주를 말한다."
+        )
+        norm_p = HierarchicalChunker.normalize_parent_text(parent_raw)
+        
+        # 문단 간 빈 줄(\n\n) 유지 확인
+        self.assertIn("\n\n", norm_p)
+        # 문장 중간 임의 개행 제거(공백 치환) 확인
+        self.assertIn("회사의 업무 능률 향상", norm_p)
+        self.assertIn("임금을 목적으로 근로를 제공하는 자", norm_p)
+        # 목록 항목 번호 앞 줄바꿈 유지 확인
+        self.assertIn("\n1. 근로자란", norm_p)
+        self.assertIn("\n2. 사용자란", norm_p)
+
+    def test_child_chunks_have_no_newlines_in_etl(self):
+        sample_content_list = [
+            {"type": "text", "text": "제1장 총칙", "text_level": 1, "page_idx": 0},
+            {
+                "type": "text",
+                "text": "제1조(목적) 이 조례는 청년의\n권익증진과 능동적인\n사회참여 기회를 보장함을\n목적으로 한다.",
+                "page_idx": 0,
+            },
+            {
+                "type": "table",
+                "table_body": "<table><tr><th>등급</th><th>기준</th></tr><tr><td>1급</td><td>중증</td></tr></table>",
+                "table_caption": "장해등급표",
+                "page_idx": 1,
+            },
+            {
+                "type": "text",
+                "text": "제2조(정의) 이 규칙에서 사용하는\n용어의 뜻은 다음과 같다.\n1. 청년이란 19세 이상\n34세 이하인 사람을 말한다.",
+                "page_idx": 1,
+            }
+        ]
+        chunker = HierarchicalChunker(doc_id="newline_test_doc")
+        etl_res = chunker.chunk_content_list(sample_content_list, doc_title="조례집", strategy="legal")
+
+        # 모든 Child Chunk에 줄바꿈이 전혀 없어야 함!
+        self.assertGreater(len(etl_res["child_chunks"]), 0)
+        for child in etl_res["child_chunks"]:
+            self.assertNotIn("\n", child["text"], f"Child chunk {child['chunk_id']} contains newline: {child['text']}")
+            self.assertNotIn("\r", child["text"])
+
+        # Parent Chunk에는 문단/목록 구조적 개행(\n\n 또는 \n)이 존재해야 함!
+        self.assertGreater(len(etl_res["parent_chunks"]), 0)
+        for parent in etl_res["parent_chunks"]:
+            self.assertIn("\n", parent["text"], f"Parent chunk {parent['parent_chunk_id']} should maintain structural newlines")
+
 
 if __name__ == "__main__":
     unittest.main()
