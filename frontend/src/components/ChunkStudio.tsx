@@ -69,6 +69,7 @@ interface ChunkStudioProps {
     pageStart?: number,
     pageEnd?: number
   ) => void;
+  onDeleteChunks?: (chunkIds: string[]) => void;
   onReassignParentSection?: (parentChunkId: string, newSectionId: string) => void;
   onBatchCleanEmptyChunks?: () => void;
   onReindexIds?: () => void;
@@ -90,6 +91,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onOpenJsonlModal,
   onSplitChunk,
   onMergeChunks,
+  onDeleteChunks,
   onReassignParentSection,
   onBatchCleanEmptyChunks,
   onReindexIds,
@@ -397,6 +399,43 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       );
       if (ok) {
         onDeleteSection?.(sec.id, true);
+      }
+    }
+  };
+
+  // Handle multi-chunk deletion with safety confirmation
+  const handleDeleteSelectedChunks = () => {
+    if (!onDeleteChunks || selectedChunkIds.size === 0) return;
+    const count = selectedChunkIds.size;
+    const ok = window.confirm(
+      `선택한 ${count}개의 청크를 정말 삭제하시겠습니까?\n\n` +
+      `• 소속된 상위 Parent의 본문 문맥도 남은 청크 기준으로 자동 축소됩니다.\n` +
+      `• 자식 청크가 모두 삭제된 Parent가 있다면 해당 Parent도 함께 자동 정리됩니다.\n\n` +
+      `삭제를 진행하시겠습니까?`
+    );
+    if (ok) {
+      onDeleteChunks(Array.from(selectedChunkIds));
+      clearSelectedChunks();
+    }
+  };
+
+  // Handle single chunk deletion with safety confirmation
+  const handleDeleteSingleChunk = (chunkId: string) => {
+    if (!onDeleteChunks) return;
+    const ok = window.confirm(
+      `청크 '${chunkId}'를 정말 삭제하시겠습니까?\n\n` +
+      `• 소속된 상위 Parent의 본문 문맥도 남은 청크 기준으로 자동 축소됩니다.\n` +
+      `• 만약 이 청크가 해당 Parent의 마지막 청크라면 Parent도 함께 자동 정리됩니다.\n\n` +
+      `삭제를 진행하시겠습니까?`
+    );
+    if (ok) {
+      onDeleteChunks([chunkId]);
+      if (selectedChunkIds.has(chunkId)) {
+        setSelectedChunkIds((prev) => {
+          const next = new Set(prev);
+          next.delete(chunkId);
+          return next;
+        });
       }
     }
   };
@@ -959,20 +998,33 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 </button>
               </div>
 
-              <button
-                type="button"
-                disabled={selectedChunkIds.size < 2 || !onMergeChunks}
-                onClick={() => setIsMergeModalOpen(true)}
-                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-                title={
-                  selectedChunkIds.size < 2
-                    ? '2개 이상의 청크를 선택해야 병합할 수 있습니다.'
-                    : '선택한 청크들을 하나로 병합합니다.'
-                }
-              >
-                <Merge className="w-3.5 h-3.5" />
-                <span>청크 병합 ({selectedChunkIds.size})</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!onDeleteChunks}
+                  onClick={handleDeleteSelectedChunks}
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                  title="선택한 청크들을 일괄 삭제합니다 (소속 Parent 본문 자동 축소 및 정합성 보장)."
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>선택 삭제 ({selectedChunkIds.size})</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={selectedChunkIds.size < 2 || !onMergeChunks}
+                  onClick={() => setIsMergeModalOpen(true)}
+                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                  title={
+                    selectedChunkIds.size < 2
+                      ? '2개 이상의 청크를 선택해야 병합할 수 있습니다.'
+                      : '선택한 청크들을 하나로 병합합니다.'
+                  }
+                >
+                  <Merge className="w-3.5 h-3.5" />
+                  <span>청크 병합 ({selectedChunkIds.size})</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -1165,22 +1217,39 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 ) : null}
                               </div>
 
-                              {/* Quick Ignore Toggle Button */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggleIgnoreChunk(chunk.chunk_id);
-                                }}
-                                className={`p-1 rounded transition cursor-pointer ${
-                                  isIgnored
-                                    ? 'text-rose-600 hover:bg-rose-100 bg-rose-50'
-                                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                }`}
-                                title={isIgnored ? '임베딩 포함으로 변경' : '임베딩 제외로 변경'}
-                              >
-                                {isIgnored ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
+                              <div className="flex items-center gap-1">
+                                {/* Quick Ignore Toggle Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleIgnoreChunk(chunk.chunk_id);
+                                  }}
+                                  className={`p-1 rounded transition cursor-pointer ${
+                                    isIgnored
+                                      ? 'text-rose-600 hover:bg-rose-100 bg-rose-50'
+                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                  }`}
+                                  title={isIgnored ? '임베딩 포함으로 변경' : '임베딩 제외로 변경'}
+                                >
+                                  {isIgnored ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+
+                                {/* Quick Single Delete Button */}
+                                {onDeleteChunks && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteSingleChunk(chunk.chunk_id);
+                                    }}
+                                    className="p-1 rounded transition cursor-pointer text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                    title="이 청크 즉시 삭제 (확인 후 삭제)"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Text Snippet (Line Clamped) */}
@@ -1279,6 +1348,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     >
                       <Scissors className="w-3.5 h-3.5 text-amber-600" />
                       <span>청크 분할</span>
+                    </button>
+                  )}
+
+                  {onDeleteChunks && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSingleChunk(activeChunk.chunk_id)}
+                      className="text-xs text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-300 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
+                      title="현재 청크 삭제 (상위 Parent 텍스트 자동 축소)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>청크 삭제</span>
                     </button>
                   )}
 

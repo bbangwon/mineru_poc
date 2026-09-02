@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info, Trash2 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
@@ -9,6 +9,7 @@ interface ChunkCardProps {
   parentSection?: ParentSection;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
   onEditChunk?: (chunk: ChildChunk) => void;
+  onDeleteChunk?: (chunkId: string) => void;
 }
 
 export const ChunkCard: React.FC<ChunkCardProps> = ({
@@ -16,6 +17,7 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
   parentSection,
   onOpenJsonlModal,
   onEditChunk,
+  onDeleteChunk,
 }) => {
   const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
   const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
@@ -128,6 +130,25 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             <FileCode2 className="w-3.5 h-3.5" />
             <span>JSONL</span>
           </button>
+
+          {onDeleteChunk && (
+            <button
+              type="button"
+              onClick={() => {
+                const ok = window.confirm(
+                  `청크 '${chunk.chunk_id}'를 정말 삭제하시겠습니까?\n\n` +
+                  `• 소속된 상위 Parent의 본문 문맥도 남은 청크 기준으로 자동 축소됩니다.\n` +
+                  `• 만약 이 청크가 해당 Parent의 마지막 청크라면 Parent도 함께 자동 정리됩니다.\n\n` +
+                  `삭제를 진행하시겠습니까?`
+                );
+                if (ok) onDeleteChunk(chunk.chunk_id);
+              }}
+              className="text-[11px] text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded transition flex items-center gap-1 font-medium cursor-pointer border border-rose-200"
+              title="청크 삭제"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+            </button>
+          )}
         </div>
       </div>
 

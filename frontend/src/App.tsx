@@ -973,6 +973,92 @@ export function App() {
     showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${mergedChunk.chunk_id}).${pruneMsg}`);
   };
 
+  // 9-1. Delete Chunks Handler (Multi-parent Support, Parent Text Shrinking, Auto-pruning)
+  const handleDeleteChunks = (chunkIds: string[]) => {
+    if (!etlData || chunkIds.length === 0) return;
+
+    const chunkIdsToRemove = new Set(chunkIds);
+    const updatedChunks = etlData.child_chunks.filter((c) => !chunkIdsToRemove.has(c.chunk_id));
+
+    const chunkMap = new Map<string, ChildChunk>();
+    for (const c of updatedChunks) {
+      chunkMap.set(c.chunk_id, c);
+    }
+
+    // 2) Update parent_chunks with Auto-pruning & text re-computation
+    const prunedParentIds = new Set<string>();
+    const survivingParents: ParentChunk[] = [];
+
+    for (const p of (etlData.parent_chunks || [])) {
+      const pid = p.parent_chunk_id || p.id || '';
+      const newChildIds = p.child_chunk_ids.filter((cid) => !chunkIdsToRemove.has(cid));
+
+      // Auto-pruning: 자식 청크가 0개가 된 Parent는 자동 삭제
+      if (newChildIds.length === 0) {
+        prunedParentIds.add(pid);
+        continue;
+      }
+
+      // 자식 청크가 남아있고 일부가 삭제된 경우 본문 텍스트 및 토큰 축소 재계산
+      const hasChanged = newChildIds.length !== p.child_chunk_ids.length;
+      if (hasChanged) {
+        const childObjects = newChildIds.map((cid) => chunkMap.get(cid)).filter(Boolean) as ChildChunk[];
+        const parentText = childObjects.map((c) => c.text).join('\n\n');
+        const minP = childObjects.length > 0 ? Math.min(...childObjects.map((c) => c.page_number)) : p.page_range[0];
+        const maxP = childObjects.length > 0 ? Math.max(...childObjects.map((c) => c.page_end || c.page_number)) : p.page_range[1];
+
+        survivingParents.push({
+          ...p,
+          child_chunk_ids: newChildIds,
+          text: parentText,
+          token_estimate: estimateKoreanTokens(parentText),
+          page_range: [minP, maxP] as [number, number],
+          is_edited: true,
+        });
+      } else {
+        survivingParents.push(p);
+      }
+    }
+
+    // 3) Update sections: remove prunedParentIds and remove deleted chunkIds
+    const sectionsToUpdate = etlData.sections || etlData.parent_sections || [];
+    const updatedSections = sectionsToUpdate.map((sec) => {
+      const newParentIds = (sec.parent_chunk_ids || []).filter((pid) => !prunedParentIds.has(pid));
+      const newChildIds = (sec.child_chunk_ids || []).filter((id) => !chunkIdsToRemove.has(id));
+
+      return {
+        ...sec,
+        parent_chunk_ids: newParentIds,
+        child_chunk_ids: newChildIds,
+      };
+    });
+
+    // 4) Recalculate stats
+    const totalWords = updatedChunks.reduce((acc, c) => acc + (c.token_estimate || 0), 0);
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_chunks: survivingParents.length,
+      total_child_chunks: updatedChunks.length,
+      paragraph_chunks: updatedChunks.filter((c) => c.chunk_type === 'paragraph').length,
+      table_chunks: updatedChunks.filter((c) => c.chunk_type === 'table').length,
+      article_chunks: updatedChunks.filter((c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause').length,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+      parent_chunks: survivingParents,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+
+    const pruneMsg = prunedParentIds.size > 0 ? ` (빈 Parent ${prunedParentIds.size}개 자동 정리)` : '';
+    showToast(`🗑️ ${chunkIds.length}개 청크가 삭제되었습니다.${pruneMsg}`);
+  };
+
   // 10. Parent Reassign Section Handler (Cascading Sync to Children)
   const handleReassignParentSection = (parentChunkId: string, newSectionId: string) => {
     if (!etlData) return;
@@ -1265,6 +1351,7 @@ export function App() {
                     onClearSectionFilter={() => setSelectedSectionId(null)}
                     onOpenJsonlModal={setActiveModalChunk}
                     onEditChunk={setEditingChunk}
+                    onDeleteChunk={(id) => handleDeleteChunks([id])}
                     isLoading={isLoadingEtl}
                   />
                 </div>
@@ -1289,6 +1376,7 @@ export function App() {
               onOpenJsonlModal={setActiveModalChunk}
               onSplitChunk={handleSplitChunk}
               onMergeChunks={handleMergeChunks}
+              onDeleteChunks={handleDeleteChunks}
               onReassignParentSection={handleReassignParentSection}
               onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
               onReindexIds={handleReindexIds}
