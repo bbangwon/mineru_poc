@@ -176,6 +176,19 @@ export async function testQdrantConnection(
   return res.json();
 }
 
+export async function getQdrantCollections(): Promise<{
+  success: boolean;
+  current_collection: string;
+  collections: string[];
+  error?: string;
+}> {
+  const res = await fetch('/api/qdrant/collections');
+  if (!res.ok) {
+    throw new Error('Qdrant 컬렉션 목록을 불러오지 못했습니다.');
+  }
+  return res.json();
+}
+
 export async function startEmbedJob(params?: {
   collection_name?: string;
   recreate_collection?: boolean;

@@ -23,6 +23,7 @@ import {
   resetEtlResult,
   startEmbedJob,
   getEmbedStatus,
+  getQdrantConfig,
 } from './api/client';
 import { getNextChunkId, reindexEtlData, estimateKoreanTokens } from './utils/idUtils';
 import { syncChunkPageMetadata } from './utils/pageUtils';
@@ -90,6 +91,7 @@ export function App() {
 
   // Qdrant & Indexing States
   const [isQdrantConfigOpen, setIsQdrantConfigOpen] = useState(false);
+  const [qdrantCollection, setQdrantCollection] = useState<string>('');
   const [isIndexingQdrant, setIsIndexingQdrant] = useState(false);
   const [qdrantIndexProgress, setQdrantIndexProgress] = useState<{ msg: string; pct: number } | null>(null);
 
@@ -223,6 +225,11 @@ export function App() {
     fetchPdfs();
     fetchSample();
     checkActiveTask();
+    getQdrantConfig()
+      .then((cfg) => {
+        if (cfg.collection_name) setQdrantCollection(cfg.collection_name);
+      })
+      .catch(() => {});
   }, [fetchPdfs, fetchSample, checkActiveTask]);
 
   // Polling loop for active background task
@@ -1451,7 +1458,7 @@ export function App() {
         ) : (
           /* Hybrid Search Playground Mode */
           <RetrievalPlayground
-            collectionName={etlData?.doc_id ? `mineru_${etlData.doc_id}` : undefined}
+            collectionName={qdrantCollection || undefined}
             onOpenConfig={() => setIsQdrantConfigOpen(true)}
             onSelectChunk={(chunkId) => {
               // 검색 결과에서 해당 청크를 스튜디오에서 탐색할 수 있도록 탭 전환
@@ -1488,7 +1495,10 @@ export function App() {
       <QdrantConfigModal
         isOpen={isQdrantConfigOpen}
         onClose={() => setIsQdrantConfigOpen(false)}
-        onSaved={(cfg) => showToast(`Qdrant 설정이 저장되었습니다. (${cfg.mode} 모드)`)}
+        onSaved={(cfg) => {
+          setQdrantCollection(cfg.collection_name);
+          showToast(`Qdrant 설정이 저장되었습니다. (컬렉션: ${cfg.collection_name})`);
+        }}
       />
     </div>
   );

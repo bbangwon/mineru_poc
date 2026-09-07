@@ -693,6 +693,19 @@ async def api_test_qdrant_connection(req: Optional[QdrantTestConnectionRequest] 
     return res
 
 
+@app.get("/api/qdrant/collections")
+async def api_get_qdrant_collections():
+    """Qdrant 인스턴스에 존재하는 컬렉션 목록 및 현재 기본 컬렉션 반환"""
+    cfg = get_qdrant_config()
+    conn = embedding_svc.test_connection(cfg)
+    return {
+        "success": conn.get("success", False),
+        "current_collection": cfg.collection_name,
+        "collections": conn.get("collections", []),
+        "error": conn.get("error"),
+    }
+
+
 def run_embedding_task(chunks_to_embed: List[Dict[str, Any]], custom_col: Optional[str], recreate: Optional[bool]):
     global embed_job_state
     embed_job_state["status"] = "running"

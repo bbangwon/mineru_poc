@@ -199,8 +199,9 @@ class QdrantManager:
         col_name = collection_name or self.config.collection_name
 
         if not client.collection_exists(col_name):
-            logger.warning(f"컬렉션이 존재하지 않습니다: {col_name}")
-            return []
+            msg = f"Qdrant 컬렉션 '{col_name}'이(가) 존재하지 않습니다. Qdrant 설정의 컬렉션 이름을 확인하거나 먼저 인덱싱을 수행해주세요."
+            logger.warning(msg)
+            raise ValueError(msg)
 
         prefetch_limit = max(limit * 2, 20)
 
