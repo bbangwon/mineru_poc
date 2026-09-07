@@ -249,7 +249,13 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                   >
                     {item.chunk_type}
                   </span>
-                  <span className="text-slate-500 text-[11px]">p.{item.page_idx + 1}</span>
+                  <span className="text-slate-500 text-[11px]">
+                    {item.page_number
+                      ? (item.page_end && item.page_end > item.page_number
+                          ? `p.${item.page_number}~${item.page_end}`
+                          : `p.${item.page_number}`)
+                      : `p.${item.page_idx + 1}`}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -273,15 +279,32 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               </div>
 
               {/* 브레드크럼 */}
-              {item.heading_hierarchy && item.heading_hierarchy.length > 0 && (
+              {(item.breadcrumbs || item.heading_hierarchy) && (item.breadcrumbs || item.heading_hierarchy)!.length > 0 && (
                 <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
                   <span className="text-slate-500">📁</span>
-                  {item.heading_hierarchy.map((h, i) => (
+                  {(item.breadcrumbs || item.heading_hierarchy)!.map((h, i) => (
                     <React.Fragment key={i}>
                       {i > 0 && <span className="text-slate-600">/</span>}
                       <span className="text-slate-300">{h}</span>
                     </React.Fragment>
                   ))}
+                </div>
+              )}
+
+              {/* 메타데이터 태그 미리보기 */}
+              {item.metadata && Object.keys(item.metadata).length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  {Object.entries(item.metadata).slice(0, 4).map(([k, v]) => (
+                    <span
+                      key={k}
+                      className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono"
+                    >
+                      {k}: <span className="text-indigo-300">{String(v)}</span>
+                    </span>
+                  ))}
+                  {Object.keys(item.metadata).length > 4 && (
+                    <span className="text-[10px] text-slate-500">+{Object.keys(item.metadata).length - 4}개</span>
+                  )}
                 </div>
               )}
 
@@ -335,7 +358,13 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400">페이지:</span>
-                  <span className="ml-2 text-slate-200">{selectedResult.page_idx + 1}</span>
+                  <span className="ml-2 text-slate-200">
+                    {selectedResult.page_number
+                      ? (selectedResult.page_end && selectedResult.page_end > selectedResult.page_number
+                          ? `p.${selectedResult.page_number}~${selectedResult.page_end}`
+                          : `p.${selectedResult.page_number}`)
+                      : `p.${selectedResult.page_idx + 1}`}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400">타입:</span>
@@ -343,16 +372,54 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400">추정 토큰 수:</span>
-                  <span className="ml-2 text-slate-200">{selectedResult.token_count}</span>
+                  <span className="ml-2 text-slate-200">{selectedResult.token_count || selectedResult.token_estimate || 0}</span>
                 </div>
+                {selectedResult.parent_chunk_id && (
+                  <div className="col-span-2">
+                    <span className="text-slate-400">부모 청크 ID:</span>
+                    <span className="ml-2 font-mono text-indigo-400">{selectedResult.parent_chunk_id}</span>
+                  </div>
+                )}
               </div>
 
+              {/* 메타데이터 상세 */}
+              {selectedResult.metadata && Object.keys(selectedResult.metadata).length > 0 && (
+                <div>
+                  <span className="block text-slate-400 font-semibold mb-1">메타데이터:</span>
+                  <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-wrap gap-2">
+                    {Object.entries(selectedResult.metadata).map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 font-mono"
+                      >
+                        <span className="text-slate-400">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 검색 자식 본문 텍스트 */}
               <div>
-                <span className="block text-slate-400 font-semibold mb-1">본문 텍스트:</span>
-                <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed">
+                <span className="block text-slate-400 font-semibold mb-1">자식 청크 본문 (검색 대상):</span>
+                <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto">
                   {selectedResult.text}
                 </div>
               </div>
+
+              {/* 부모 청크 컨텍스트 (LLM 생성 주입용) */}
+              {selectedResult.parent_text && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-slate-400 font-semibold flex items-center gap-1.5">
+                      <span className="text-indigo-400">◈</span> 부모 청크 문맥 (LLM 주입용 Parent Context):
+                    </span>
+                  </div>
+                  <div className="p-4 bg-indigo-950/20 rounded-xl border border-indigo-900/40 text-slate-300 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto text-xs">
+                    {selectedResult.parent_text}
+                  </div>
+                </div>
+              )}
 
               {selectedResult.image_url && (
                 <div>

@@ -111,11 +111,36 @@ export function App() {
       return;
     }
 
+    // 부모 청크 맵 구성 (parent_chunk_id -> parent)
+    const pMap = new Map<string, ParentChunk>();
+    (etlData.parent_chunks || []).forEach((p) => {
+      const pid = p.parent_chunk_id || p.id;
+      if (pid) pMap.set(pid, p);
+    });
+
+    // is_ignored 청크는 제외하고 parent_text 주입
+    const chunksToEmbed = etlData.child_chunks
+      .filter((c) => !c.is_ignored)
+      .map((c) => {
+        const pid = c.parent_chunk_id || c.parent_id || '';
+        const parent = pid ? pMap.get(pid) : undefined;
+        return {
+          ...c,
+          parent_text: c.parent_text || parent?.text || '',
+        };
+      });
+
+    if (chunksToEmbed.length === 0) {
+      showToast('임베딩 대상 청크가 모두 제외(ignored) 상태입니다.', true);
+      return;
+    }
+
     try {
       setIsIndexingQdrant(true);
       setQdrantIndexProgress({ msg: '인덱싱 작업 요청 중...', pct: 5 });
       const res = await startEmbedJob({
-        chunks: etlData.child_chunks,
+        chunks: chunksToEmbed,
+        parent_chunks: etlData.parent_chunks,
       });
 
       if (!res.success && res.status !== 'running') {

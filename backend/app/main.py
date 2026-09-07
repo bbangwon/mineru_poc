@@ -646,6 +646,7 @@ class EmbedRequest(BaseModel):
     collection_name: Optional[str] = None
     recreate_collection: Optional[bool] = None
     chunks: Optional[List[Dict[str, Any]]] = None
+    parent_chunks: Optional[List[Dict[str, Any]]] = None
 
 
 class SearchRequest(BaseModel):
@@ -713,7 +714,12 @@ async def api_get_qdrant_collections():
     }
 
 
-def run_embedding_task(chunks_to_embed: List[Dict[str, Any]], custom_col: Optional[str], recreate: Optional[bool]):
+def run_embedding_task(
+    chunks_to_embed: List[Dict[str, Any]],
+    parent_chunks_to_embed: Optional[List[Dict[str, Any]]],
+    custom_col: Optional[str],
+    recreate: Optional[bool],
+):
     global embed_job_state
     embed_job_state["status"] = "running"
     embed_job_state["progress_msg"] = "임베딩 작업 시작..."
@@ -735,6 +741,7 @@ def run_embedding_task(chunks_to_embed: List[Dict[str, Any]], custom_col: Option
 
         res = embedding_svc.embed_and_upsert(
             child_chunks=chunks_to_embed,
+            parent_chunks=parent_chunks_to_embed,
             config=cfg,
             collection_name=custom_col,
             progress_callback=progress_callback,
@@ -758,9 +765,13 @@ async def api_embed_chunks(req: EmbedRequest, background_tasks: BackgroundTasks)
 
     # 인덱싱 대상 청크 추출
     chunks_to_embed = req.chunks
+    parent_chunks_to_embed = req.parent_chunks
+
     if not chunks_to_embed:
         if latest_etl_result and "child_chunks" in latest_etl_result:
             chunks_to_embed = latest_etl_result["child_chunks"]
+            if not parent_chunks_to_embed and "parent_chunks" in latest_etl_result:
+                parent_chunks_to_embed = latest_etl_result.get("parent_chunks", [])
         else:
             found = find_latest_content_list()
             if found:
@@ -770,6 +781,9 @@ async def api_embed_chunks(req: EmbedRequest, background_tasks: BackgroundTasks)
                     content_list, doc_title=file_path.parent.parent.name
                 )
                 chunks_to_embed = latest_etl_result.get("child_chunks", [])
+                parent_chunks_to_embed = latest_etl_result.get("parent_chunks", [])
+    elif not parent_chunks_to_embed and latest_etl_result and "parent_chunks" in latest_etl_result:
+        parent_chunks_to_embed = latest_etl_result.get("parent_chunks", [])
 
     if not chunks_to_embed:
         raise HTTPException(
@@ -788,6 +802,7 @@ async def api_embed_chunks(req: EmbedRequest, background_tasks: BackgroundTasks)
     background_tasks.add_task(
         run_embedding_task,
         chunks_to_embed,
+        parent_chunks_to_embed,
         req.collection_name,
         req.recreate_collection,
     )

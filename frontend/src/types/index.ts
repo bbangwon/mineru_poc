@@ -57,6 +57,7 @@ export interface ChildChunk {
   is_atomic_table?: boolean;
   is_edited?: boolean;
   is_ignored?: boolean;            // Vector DB 임베딩 제외 플래그
+  parent_text?: string;            // 부모 청크 전체 문맥 텍스트
   metadata?: Record<string, any>;
 }
 
@@ -165,13 +166,25 @@ export interface SearchResultItem {
   id: string;
   score: number;
   chunk_id: string;
+  parent_chunk_id?: string;
+  parent_text?: string;
+  section_id?: string;
   text: string;
   title: string;
+  page_number?: number;
+  page_end?: number;
   page_idx: number;
   chunk_type: string;
   heading_hierarchy: string[];
+  breadcrumbs?: string[];
   token_count: number;
+  token_estimate?: number;
+  raw_html?: string;
+  table_caption?: string;
+  table_footnote?: string;
+  is_table?: boolean;
   image_url?: string | null;
+  metadata?: Record<string, any>;
   payload?: Record<string, any>;
 }
 

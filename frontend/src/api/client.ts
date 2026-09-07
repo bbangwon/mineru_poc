@@ -193,6 +193,7 @@ export async function startEmbedJob(params?: {
   collection_name?: string;
   recreate_collection?: boolean;
   chunks?: any[];
+  parent_chunks?: any[];
 }): Promise<{ success: boolean; message: string; total_chunks?: number; status: string }> {
   const res = await fetch('/api/etl/embed', {
     method: 'POST',

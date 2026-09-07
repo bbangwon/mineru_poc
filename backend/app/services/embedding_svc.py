@@ -68,6 +68,7 @@ class EmbeddingService:
     def embed_and_upsert(
         self,
         child_chunks: List[Dict[str, Any]],
+        parent_chunks: Optional[List[Dict[str, Any]]] = None,
         config: Optional[QdrantConfig] = None,
         collection_name: Optional[str] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
@@ -76,12 +77,22 @@ class EmbeddingService:
         start_time = time.time()
         cfg = config or get_qdrant_config()
         target_col = collection_name or cfg.collection_name
-        manager = QdrantManager(config=cfg)
+        manager = self.get_manager(cfg)
 
         if not child_chunks:
             return {
                 "success": False,
                 "error": "인덱싱할 청크 데이터가 비어 있습니다.",
+                "total_chunks": 0,
+                "upserted_count": 0,
+            }
+
+        # 제외 플래그(is_ignored)가 설정된 청크 필터링
+        active_chunks = [c for c in child_chunks if not c.get("is_ignored")]
+        if not active_chunks:
+            return {
+                "success": False,
+                "error": "인덱싱 대상 청크가 모두 제외(is_ignored) 상태입니다.",
                 "total_chunks": 0,
                 "upserted_count": 0,
             }
@@ -93,7 +104,7 @@ class EmbeddingService:
         dense_enc = get_dense_encoder(cfg)
 
         # 텍스트 추출 (text 필드 우선, 없을 경우 content 필드)
-        texts = [c.get("text") or c.get("content") or "" for c in child_chunks]
+        texts = [c.get("text") or c.get("content") or "" for c in active_chunks]
 
         # 1. Sparse 인코딩
         sparse_vecs = sparse_enc.encode_documents(texts)
@@ -109,29 +120,69 @@ class EmbeddingService:
         )
 
         if progress_callback:
-            progress_callback(f"Qdrant 컬렉션 준비 및 데이터 적재 중 ({len(child_chunks)}개)...", 70)
+            progress_callback(f"Qdrant 컬렉션 준비 및 데이터 적재 중 ({len(active_chunks)}개)...", 70)
+
+        # 부모 청크 매핑 테이블 구성
+        parent_map: Dict[str, Dict[str, Any]] = {}
+        if parent_chunks:
+            for p in parent_chunks:
+                pid = p.get("parent_chunk_id") or p.get("id")
+                if pid:
+                    parent_map[pid] = p
 
         # 3. Qdrant 포인트 구성
         points: List[Dict[str, Any]] = []
         embedded_export_data: List[Dict[str, Any]] = []
 
-        for i, chunk in enumerate(child_chunks):
+        for i, chunk in enumerate(active_chunks):
             cid = chunk.get("chunk_id") or f"chunk_{i:04d}"
             sp_vec = sparse_vecs[i]
             dn_vec = dense_vecs[i]
 
+            pid = chunk.get("parent_chunk_id") or chunk.get("parent_id") or ""
+            # chunk 자체에 parent_text가 있으면 우선 채택, 없으면 parent_map에서 조회
+            p_text = chunk.get("parent_text")
+            if not p_text and pid and pid in parent_map:
+                p_text = parent_map[pid].get("text", "")
+            p_text = p_text or ""
+
+            # 페이지 정보 정규화
+            page_start = chunk.get("page_number") or chunk.get("page") or 1
+            page_end = chunk.get("page_end") or page_start
+            page_idx = (page_start - 1) if isinstance(page_start, int) and page_start > 0 else chunk.get("page_idx", 0)
+
+            # 목차/계층 정보 정규화
+            breadcrumbs = chunk.get("breadcrumbs") or chunk.get("heading_hierarchy") or []
+
+            # 토큰 수 정규화
+            token_count = chunk.get("token_estimate") or chunk.get("token_count") or 0
+
             payload = {
                 "chunk_id": cid,
                 "doc_id": chunk.get("doc_id", ""),
+                "parent_chunk_id": pid,
+                "parent_text": p_text,
+                "section_id": chunk.get("section_id", ""),
                 "chunk_type": chunk.get("chunk_type", "text"),
-                "title": chunk.get("title", ""),
-                "page_idx": chunk.get("page_idx", 0),
-                "heading_hierarchy": chunk.get("heading_hierarchy", []),
+                "title": chunk.get("title") or chunk.get("table_caption") or "",
+                "page_number": page_start,
+                "page_end": page_end,
+                "page_idx": page_idx,
+                "breadcrumbs": breadcrumbs,
+                "heading_hierarchy": breadcrumbs,  # 기존 호환성 유지
                 "text": texts[i],
-                "token_count": chunk.get("token_count", 0),
+                "token_count": token_count,
+                "token_estimate": token_count,
                 "char_length": len(texts[i]),
+                "raw_html": chunk.get("raw_html"),
+                "table_caption": chunk.get("table_caption"),
+                "table_footnote": chunk.get("table_footnote"),
+                "table_type": chunk.get("table_type"),
+                "is_table": bool(chunk.get("is_table") or chunk.get("chunk_type") == "table"),
+                "is_atomic_table": bool(chunk.get("is_atomic_table")),
                 "image_path": chunk.get("image_path"),
                 "image_url": chunk.get("image_url"),
+                "metadata": chunk.get("metadata") or {},
             }
 
             points.append({
@@ -224,19 +275,31 @@ class EmbeddingService:
 
         formatted_results: List[Dict[str, Any]] = []
         for rank, res in enumerate(search_results, start=1):
-            p = res.payload
+            p = res.payload or {}
             formatted_results.append({
                 "rank": rank,
                 "id": res.id,
                 "score": round(res.score, 6),
                 "chunk_id": p.get("chunk_id", res.id),
+                "parent_chunk_id": p.get("parent_chunk_id", ""),
+                "parent_text": p.get("parent_text", ""),
+                "section_id": p.get("section_id", ""),
                 "text": p.get("text", ""),
                 "title": p.get("title", ""),
+                "page_number": p.get("page_number", (p.get("page_idx", 0) + 1)),
+                "page_end": p.get("page_end", p.get("page_number", (p.get("page_idx", 0) + 1))),
                 "page_idx": p.get("page_idx", 0),
                 "chunk_type": p.get("chunk_type", "text"),
-                "heading_hierarchy": p.get("heading_hierarchy", []),
+                "breadcrumbs": p.get("breadcrumbs") or p.get("heading_hierarchy", []),
+                "heading_hierarchy": p.get("heading_hierarchy") or p.get("breadcrumbs", []),
                 "token_count": p.get("token_count", 0),
+                "token_estimate": p.get("token_estimate", p.get("token_count", 0)),
+                "raw_html": p.get("raw_html"),
+                "table_caption": p.get("table_caption"),
+                "table_footnote": p.get("table_footnote"),
+                "is_table": p.get("is_table", False),
                 "image_url": p.get("image_url"),
+                "metadata": p.get("metadata", {}),
                 "payload": p,
             })
 
