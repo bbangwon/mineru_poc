@@ -7,9 +7,10 @@ import {
   Layers,
   CheckCircle2,
   FileText,
+  Search,
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'studio';
+export type ActiveTab = 'dashboard' | 'studio' | 'search';
 
 interface SidebarNavProps {
   activeTab: ActiveTab;
@@ -107,6 +108,24 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 {totalChunks}
               </span>
             )}
+          </div>
+        </button>
+
+        {/* Hybrid Search Playground Tab */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('search')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+            activeTab === 'search'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+          title="하이브리드 검색 플레이그라운드 (Qdrant RRF)"
+        >
+          <Search className="w-4 h-4 shrink-0" />
+          <div className="hidden sm:flex flex-1 items-center justify-between">
+            <span>하이브리드 검색</span>
+            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 py-0.2 rounded">RRF</span>
           </div>
         </button>
 

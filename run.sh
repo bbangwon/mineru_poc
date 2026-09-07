@@ -22,6 +22,9 @@ if [ ! -d "frontend/dist" ]; then
     (cd frontend && npm install && npm run build)
 fi
 
+# Ensure packages/rag_embed_core is in PYTHONPATH
+export PYTHONPATH="$SCRIPT_DIR:$SCRIPT_DIR/packages/rag_embed_core:${PYTHONPATH:-}"
+
 echo "Launching MinerU RAG ETL Studio..."
 exec .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port "$PORT" --reload
 

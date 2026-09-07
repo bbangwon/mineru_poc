@@ -1,4 +1,17 @@
-import { Download, Cpu, Save, RotateCcw, Loader2, LayoutDashboard, SlidersHorizontal, FileText, ListOrdered } from 'lucide-react';
+import {
+  Download,
+  Cpu,
+  Save,
+  RotateCcw,
+  Loader2,
+  LayoutDashboard,
+  SlidersHorizontal,
+  FileText,
+  ListOrdered,
+  Database,
+  Search,
+  Zap,
+} from 'lucide-react';
 import type { ActiveTab } from './SidebarNav';
 
 interface HeaderProps {
@@ -8,9 +21,13 @@ interface HeaderProps {
   isDirty?: boolean;
   isSaving?: boolean;
   isResetting?: boolean;
+  isIndexingQdrant?: boolean;
+  qdrantIndexProgress?: { msg: string; pct: number } | null;
   onSave?: () => void;
   onReset?: () => void;
   onReindex?: () => void;
+  onOpenQdrantConfig?: () => void;
+  onIndexQdrant?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,9 +37,13 @@ export const Header: React.FC<HeaderProps> = ({
   isDirty = false,
   isSaving = false,
   isResetting = false,
+  isIndexingQdrant = false,
+  qdrantIndexProgress = null,
   onSave,
   onReset,
   onReindex,
+  onOpenQdrantConfig,
+  onIndexQdrant,
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
@@ -32,12 +53,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${
               activeTab === 'studio'
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                : activeTab === 'search'
+                ? 'bg-purple-50 border-purple-200 text-purple-700'
                 : 'bg-slate-100 border-slate-200 text-slate-700'
             }`}>
               {activeTab === 'studio' ? (
                 <>
                   <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
                   <span>청크 에디터 스튜디오</span>
+                </>
+              ) : activeTab === 'search' ? (
+                <>
+                  <Search className="w-3.5 h-3.5 text-purple-600" />
+                  <span>하이브리드 검색</span>
                 </>
               ) : (
                 <>
@@ -114,6 +142,48 @@ export const Header: React.FC<HeaderProps> = ({
                 <Save className="w-3.5 h-3.5" />
               )}
               <span>{isDirty ? '수정본 저장*' : '수정본 저장'}</span>
+            </button>
+          )}
+
+          {/* Qdrant Indexing Button */}
+          {hasData && onIndexQdrant && (
+            <button
+              type="button"
+              onClick={onIndexQdrant}
+              disabled={isIndexingQdrant || isSaving || isResetting}
+              className={`text-xs font-semibold px-3 py-2 rounded-lg transition border flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                isIndexingQdrant
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 animate-pulse'
+                  : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100 text-indigo-700'
+              } disabled:opacity-50`}
+              title="현재 청크 데이터를 Dense(BGE-M3) & Sparse(Kiwi+IDF)로 인코딩하여 Qdrant에 색인"
+            >
+              {isIndexingQdrant ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                  <span>
+                    색인 중{qdrantIndexProgress ? ` (${qdrantIndexProgress.pct}%)` : '...'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Qdrant 색인</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Qdrant Config Modal Button */}
+          {onOpenQdrantConfig && (
+            <button
+              type="button"
+              onClick={onOpenQdrantConfig}
+              className="text-xs font-medium px-2.5 py-2 rounded-lg transition border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 cursor-pointer shadow-2xs"
+              title="Qdrant 연결 및 컬렉션 설정 (로컬 파일 DB / 원격 서버)"
+            >
+              <Database className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden xl:inline">Qdrant 설정</span>
             </button>
           )}
 

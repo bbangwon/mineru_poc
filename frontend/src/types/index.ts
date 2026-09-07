@@ -119,3 +119,67 @@ export interface JobStatusResponse {
   error?: string;
   active?: boolean;
 }
+
+// 5. Qdrant & 하이브리드 임베딩 관련 타입
+export interface QdrantConfig {
+  mode: 'embedded' | 'remote';
+  local_path: string;
+  url?: string;
+  api_key?: string | null;
+  collection_name: string;
+  recreate_collection: boolean;
+  dense_model_name?: string;
+  dense_dim?: number;
+  batch_size?: number;
+}
+
+export interface QdrantTestResponse {
+  success: boolean;
+  mode: string;
+  target: string;
+  collections?: string[];
+  collections_count?: number;
+  message: string;
+  error?: string;
+}
+
+export interface EmbedStatusResponse {
+  status: 'idle' | 'running' | 'done' | 'error';
+  progress_msg: string;
+  progress_pct: number;
+  last_result?: {
+    success: boolean;
+    collection_name: string;
+    total_chunks: number;
+    upserted_count: number;
+    elapsed_time: number;
+    dense_dim: number;
+    export_file: string;
+  };
+  error?: string | null;
+  elapsed_time: number;
+}
+
+export interface SearchResultItem {
+  rank: number;
+  id: string;
+  score: number;
+  chunk_id: string;
+  text: string;
+  title: string;
+  page_idx: number;
+  chunk_type: string;
+  heading_hierarchy: string[];
+  token_count: number;
+  image_url?: string | null;
+  payload?: Record<string, any>;
+}
+
+export interface SearchTestResponse {
+  success: boolean;
+  query: string;
+  collection_name: string;
+  total_matches: number;
+  results: SearchResultItem[];
+}
+

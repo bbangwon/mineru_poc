@@ -138,3 +138,83 @@ export async function reindexEtlResult(data?: EtlResult): Promise<EtlResult> {
   }
   return res.json();
 }
+
+// 5. Qdrant & 하이브리드 검색 API
+export async function getQdrantConfig(): Promise<import('../types').QdrantConfig> {
+  const res = await fetch('/api/qdrant/config');
+  if (!res.ok) throw new Error('Qdrant 설정을 불러오지 못했습니다.');
+  return res.json();
+}
+
+export async function saveQdrantConfig(
+  config: import('../types').QdrantConfig
+): Promise<{ success: boolean; config: import('../types').QdrantConfig }> {
+  const res = await fetch('/api/qdrant/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Qdrant 설정 저장에 실패했습니다.');
+  }
+  return res.json();
+}
+
+export async function testQdrantConnection(
+  params?: Partial<import('../types').QdrantConfig>
+): Promise<import('../types').QdrantTestResponse> {
+  const res = await fetch('/api/qdrant/test-connection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Qdrant 연결 테스트 실패');
+  }
+  return res.json();
+}
+
+export async function startEmbedJob(params?: {
+  collection_name?: string;
+  recreate_collection?: boolean;
+  chunks?: any[];
+}): Promise<{ success: boolean; message: string; total_chunks?: number; status: string }> {
+  const res = await fetch('/api/etl/embed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '임베딩 작업 등록 실패');
+  }
+  return res.json();
+}
+
+export async function getEmbedStatus(): Promise<import('../types').EmbedStatusResponse> {
+  const res = await fetch('/api/etl/embed/status');
+  if (!res.ok) {
+    throw new Error('임베딩 상태 조회 실패');
+  }
+  return res.json();
+}
+
+export async function searchTest(
+  query: string,
+  limit: number = 10,
+  collection_name?: string
+): Promise<import('../types').SearchTestResponse> {
+  const res = await fetch('/api/etl/search/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, limit, collection_name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '하이브리드 검색 실패');
+  }
+  return res.json();
+}
+

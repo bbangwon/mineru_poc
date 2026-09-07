@@ -9,6 +9,8 @@ import { HierarchyTree } from './components/HierarchyTree';
 import { ChunkExplorer } from './components/ChunkExplorer';
 import { JsonlModal } from './components/JsonlModal';
 import { ChunkEditModal } from './components/ChunkEditModal';
+import { QdrantConfigModal } from './components/QdrantConfigModal';
+import { RetrievalPlayground } from './components/RetrievalPlayground';
 import {
   getPdfList,
   selectPdf,
@@ -19,6 +21,8 @@ import {
   getActiveJob,
   saveEtlResult,
   resetEtlResult,
+  startEmbedJob,
+  getEmbedStatus,
 } from './api/client';
 import { getNextChunkId, reindexEtlData, estimateKoreanTokens } from './utils/idUtils';
 import { syncChunkPageMetadata } from './utils/pageUtils';
@@ -84,9 +88,66 @@ export function App() {
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
+  // Qdrant & Indexing States
+  const [isQdrantConfigOpen, setIsQdrantConfigOpen] = useState(false);
+  const [isIndexingQdrant, setIsIndexingQdrant] = useState(false);
+  const [qdrantIndexProgress, setQdrantIndexProgress] = useState<{ msg: string; pct: number } | null>(null);
+
   const showToast = (message: string, isError = false) => {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleIndexQdrant = async () => {
+    if (!etlData?.child_chunks || etlData.child_chunks.length === 0) {
+      showToast('인덱싱할 청크가 없습니다. 먼저 문서를 파싱해주세요.', true);
+      return;
+    }
+
+    try {
+      setIsIndexingQdrant(true);
+      setQdrantIndexProgress({ msg: '인덱싱 작업 요청 중...', pct: 5 });
+      const res = await startEmbedJob({
+        chunks: etlData.child_chunks,
+      });
+
+      if (!res.success && res.status !== 'running') {
+        showToast(res.message || '인덱싱 등록 실패', true);
+        setIsIndexingQdrant(false);
+        setQdrantIndexProgress(null);
+        return;
+      }
+
+      showToast('Qdrant 하이브리드 색인 작업이 시작되었습니다.');
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await getEmbedStatus();
+          if (statusRes.status === 'running') {
+            setQdrantIndexProgress({
+              msg: statusRes.progress_msg,
+              pct: statusRes.progress_pct,
+            });
+          } else if (statusRes.status === 'done') {
+            clearInterval(pollInterval);
+            setIsIndexingQdrant(false);
+            setQdrantIndexProgress(null);
+            showToast(`Qdrant 색인 완료! (${statusRes.last_result?.upserted_count || 0}개 청크 적재됨)`);
+          } else if (statusRes.status === 'error') {
+            clearInterval(pollInterval);
+            setIsIndexingQdrant(false);
+            setQdrantIndexProgress(null);
+            showToast(`인덱싱 오류: ${statusRes.error || '알 수 없는 오류'}`, true);
+          }
+        } catch {
+          // ignore polling errors
+        }
+      }, 1500);
+    } catch (err: any) {
+      setIsIndexingQdrant(false);
+      setQdrantIndexProgress(null);
+      showToast(err.message || '인덱싱 시작 실패', true);
+    }
   };
 
   const isLegalDoc = (name: string) => /규정|지침|기준|법률|조례|훈령|전문/.test(name);
@@ -1291,9 +1352,13 @@ export function App() {
           isDirty={isDirty}
           isSaving={isSaving}
           isResetting={isResetting}
+          isIndexingQdrant={isIndexingQdrant}
+          qdrantIndexProgress={qdrantIndexProgress}
           onSave={handleSaveEtl}
           onReset={handleResetEtl}
           onReindex={handleReindexIds}
+          onOpenQdrantConfig={() => setIsQdrantConfigOpen(true)}
+          onIndexQdrant={handleIndexQdrant}
         />
 
         {activeTab === 'dashboard' ? (
@@ -1358,7 +1423,7 @@ export function App() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'studio' ? (
           /* Chunk Studio Mode: 3-Column Focus IDE Workspace */
           <div className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col min-h-0">
             <ChunkStudio
@@ -1383,6 +1448,21 @@ export function App() {
               isLoading={isLoadingEtl}
             />
           </div>
+        ) : (
+          /* Hybrid Search Playground Mode */
+          <RetrievalPlayground
+            collectionName={etlData?.doc_id ? `mineru_${etlData.doc_id}` : undefined}
+            onOpenConfig={() => setIsQdrantConfigOpen(true)}
+            onSelectChunk={(chunkId) => {
+              // 검색 결과에서 해당 청크를 스튜디오에서 탐색할 수 있도록 탭 전환
+              setActiveTab('studio');
+              // 해당 청크의 부모 섹션 찾아서 선택
+              const targetChunk = etlData?.child_chunks.find((c) => c.chunk_id === chunkId);
+              if (targetChunk?.section_id) {
+                setSelectedSectionId(targetChunk.section_id);
+              }
+            }}
+          />
         )}
       </div>
 
@@ -1402,6 +1482,13 @@ export function App() {
         onClose={() => setEditingChunk(null)}
         onSave={handleUpdateChunk}
         onReassignParentSection={handleReassignParentSection}
+      />
+
+      {/* Qdrant Configuration Modal */}
+      <QdrantConfigModal
+        isOpen={isQdrantConfigOpen}
+        onClose={() => setIsQdrantConfigOpen(false)}
+        onSaved={(cfg) => showToast(`Qdrant 설정이 저장되었습니다. (${cfg.mode} 모드)`)}
       />
     </div>
   );
