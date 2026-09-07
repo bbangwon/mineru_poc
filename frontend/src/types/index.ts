@@ -183,3 +183,32 @@ export interface SearchTestResponse {
   results: SearchResultItem[];
 }
 
+// 6. LLM 설정 및 텍스트 자동 교정 관련 타입
+export interface LLMConfig {
+  base_url: string;
+  model_name: string;
+  api_key?: string;
+  temperature: number;
+  max_tokens: number;
+  timeout?: number;
+  system_prompt: string;
+}
+
+export interface LLMTestResponse {
+  success: boolean;
+  message: string;
+  model: string;
+  latency_ms?: number;
+  error?: string;
+}
+
+export interface LLMRefineResponse {
+  success: boolean;
+  original_text: string;
+  refined_text: string;
+  elapsed_seconds: number;
+  original_chars: number;
+  refined_chars: number;
+}
+
+

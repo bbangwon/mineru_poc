@@ -231,3 +231,76 @@ export async function searchTest(
   return res.json();
 }
 
+// 6. LLM 설정 및 청크 텍스트 자동 교정 API
+export async function getLLMConfig(): Promise<import('../types').LLMConfig> {
+  const res = await fetch('/api/llm/config');
+  if (!res.ok) throw new Error('LLM 설정을 불러오지 못했습니다.');
+  return res.json();
+}
+
+export async function saveLLMConfig(
+  config: import('../types').LLMConfig
+): Promise<{ success: boolean; config: import('../types').LLMConfig }> {
+  const res = await fetch('/api/llm/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'LLM 설정 저장에 실패했습니다.');
+  }
+  return res.json();
+}
+
+export async function getDefaultSystemPrompt(): Promise<{ default_prompt: string }> {
+  const res = await fetch('/api/llm/config/default-prompt');
+  if (!res.ok) throw new Error('기본 프롬프트를 불러오지 못했습니다.');
+  return res.json();
+}
+
+export async function getLLMModels(
+  baseUrl?: string,
+  apiKey?: string
+): Promise<{ success: boolean; models: string[] }> {
+  const params = new URLSearchParams();
+  if (baseUrl) params.append('base_url', baseUrl);
+  if (apiKey) params.append('api_key', apiKey);
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/llm/models${queryStr}`);
+  if (!res.ok) throw new Error('모델 목록을 조회하지 못했습니다.');
+  return res.json();
+}
+
+export async function testLLMConnection(
+  params?: Partial<import('../types').LLMConfig>
+): Promise<import('../types').LLMTestResponse> {
+  const res = await fetch('/api/llm/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'LLM 연결 테스트 실패');
+  }
+  return res.json();
+}
+
+export async function refineChunkText(
+  text: string,
+  customPrompt?: string
+): Promise<import('../types').LLMRefineResponse> {
+  const res = await fetch('/api/llm/refine-chunk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, custom_prompt: customPrompt }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '청크 텍스트 교정 실패');
+  }
+  return res.json();
+}
+
+

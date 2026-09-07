@@ -11,6 +11,7 @@ interface ChunkExplorerProps {
   onOpenJsonlModal: (chunk: ChildChunk) => void;
   onEditChunk?: (chunk: ChildChunk) => void;
   onDeleteChunk?: (chunkId: string) => void;
+  onRefineChunk?: (chunk: ChildChunk) => void;
   isLoading: boolean;
 }
 
@@ -22,6 +23,7 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
   onOpenJsonlModal,
   onEditChunk,
   onDeleteChunk,
+  onRefineChunk,
   isLoading,
 }) => {
   const [typeFilter, setTypeFilter] = useState<'all' | 'table' | 'paragraph'>('all');
@@ -167,6 +169,7 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
               onOpenJsonlModal={onOpenJsonlModal}
               onEditChunk={onEditChunk}
               onDeleteChunk={onDeleteChunk}
+              onRefineChunk={onRefineChunk}
             />
           ))
         )}

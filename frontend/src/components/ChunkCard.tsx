@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info, Trash2, Sparkles } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
@@ -10,6 +10,7 @@ interface ChunkCardProps {
   onOpenJsonlModal: (chunk: ChildChunk) => void;
   onEditChunk?: (chunk: ChildChunk) => void;
   onDeleteChunk?: (chunkId: string) => void;
+  onRefineChunk?: (chunk: ChildChunk) => void;
 }
 
 export const ChunkCard: React.FC<ChunkCardProps> = ({
@@ -18,6 +19,7 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
   onOpenJsonlModal,
   onEditChunk,
   onDeleteChunk,
+  onRefineChunk,
 }) => {
   const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
   const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
@@ -119,6 +121,18 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             >
               <Edit3 className="w-3.5 h-3.5" />
               <span>수정</span>
+            </button>
+          )}
+
+          {onRefineChunk && (
+            <button
+              type="button"
+              onClick={() => onRefineChunk(chunk)}
+              className="text-[11px] text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded transition flex items-center gap-1 font-semibold cursor-pointer border border-purple-200/80"
+              title="로컬 LLM을 통한 청크 텍스트 띄어쓰기 및 줄바꿈 자동 교정"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+              <span>AI 교정</span>
             </button>
           )}
 

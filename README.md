@@ -23,6 +23,9 @@ Apple Silicon(Mac M-series)의 **MLX/Metal** 하드웨어 가속 환경에서 �
    - 표 원형 렌더링 확인 및 실시간 단일 JSONL 레코드 인스펙터 제공
 5. **동적 PDF 업로드 & 맞춤 파싱**:
    - 상단 툴바에서 새 PDF 업로드 및 페이지 범위/엔진 선택 후 실시간 파싱 실행
+6. **로컬 LLM 기반 청크 텍스트 자동 교정 (gemma4:12b-mlx, temp=0.0)**:
+   - OpenAI 호환 엔드포인트를 통한 비정상적인 줄바꿈(단어 중간 개행) 및 국립국어원 띄어쓰기 규정 자동 정제
+   - Before vs After Diff 비교 뷰를 통한 안전한 검토 및 원클릭 교정본 반영
 
 ---
 
@@ -54,4 +57,6 @@ npm run dev
 
 ## 📚 개발 및 고도화 문서
 - [계층 구조 및 청크 편집 기능 구현 계획서](docs/CHUNK_EDITOR_IMPLEMENTATION_PLAN.md)
+- [로컬 LLM 기반 청크 텍스트 자동 교정(띄어쓰기·줄바꿈 정제) 구현 계획서](docs/LLM_CHUNK_REFINE_IMPLEMENTATION_PLAN.md)
+
 

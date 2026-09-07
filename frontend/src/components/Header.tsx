@@ -11,6 +11,7 @@ import {
   Database,
   Search,
   Zap,
+  Bot,
 } from 'lucide-react';
 import type { ActiveTab } from './SidebarNav';
 
@@ -26,6 +27,7 @@ interface HeaderProps {
   onSave?: () => void;
   onReset?: () => void;
   onReindex?: () => void;
+  onOpenLLMConfig?: () => void;
   onOpenQdrantConfig?: () => void;
   onIndexQdrant?: () => void;
 }
@@ -42,6 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSave,
   onReset,
   onReindex,
+  onOpenLLMConfig,
   onOpenQdrantConfig,
   onIndexQdrant,
 }) => {
@@ -171,6 +174,19 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Qdrant 색인</span>
                 </>
               )}
+            </button>
+          )}
+
+          {/* LLM Config Modal Button */}
+          {onOpenLLMConfig && (
+            <button
+              type="button"
+              onClick={onOpenLLMConfig}
+              className="text-xs font-medium px-2.5 py-2 rounded-lg transition border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="로컬 LLM(gemma4:12b-mlx 등) 기반 텍스트 자동 교정 및 OpenAI 호환 설정"
+            >
+              <Bot className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden xl:inline">LLM 설정</span>
             </button>
           )}
 

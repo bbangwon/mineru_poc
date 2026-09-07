@@ -30,13 +30,16 @@ import {
   CheckSquare,
   Trash2,
   ListOrdered,
+  Loader2,
+  Bot,
 } from 'lucide-react';
-import type { ChildChunk, ParentSection, ParentChunk } from '../types';
+import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
 import { AddSectionModal } from './AddSectionModal';
 import { formatChunkPage, formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
+import { refineChunkText } from '../api/client';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
@@ -508,6 +511,32 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const activeWordCount = activeChunk?.token_estimate || 0;
   const isOverTokenLimit = !isTableChunk && activeWordCount > 512;
   const isUnderTokenLimit = !isTableChunk && activeWordCount > 0 && activeWordCount < 20;
+
+  // AI Refinement State (Studio Focus Editor)
+  const [isStudioRefining, setIsStudioRefining] = useState(false);
+  const [studioRefineError, setStudioRefineError] = useState<string | null>(null);
+  const [studioDiffData, setStudioDiffData] = useState<LLMRefineResponse | null>(null);
+  const [isStudioDiffOpen, setIsStudioDiffOpen] = useState(false);
+
+  const handleStudioRunAiRefine = async () => {
+    if (!activeChunk) return;
+    const targetText = editorTab === 'raw_html' ? (activeChunk.raw_html || '') : (activeChunk.text || '');
+    if (!targetText.trim()) {
+      setStudioRefineError('교정할 본문 텍스트가 비어 있습니다.');
+      return;
+    }
+    setIsStudioRefining(true);
+    setStudioRefineError(null);
+    try {
+      const res = await refineChunkText(targetText);
+      setStudioDiffData(res);
+      setIsStudioDiffOpen(true);
+    } catch (err: any) {
+      setStudioRefineError(err.message || 'AI 교정 중 오류가 발생했습니다.');
+    } finally {
+      setIsStudioRefining(false);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-100/70 rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -1698,16 +1727,64 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                 {/* Main Textarea / Code / Preview */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-800">
-                      {activeChunk.chunk_type === 'table' && editorTab === 'raw_html'
-                        ? '표 HTML 원형 코드 (raw_html)'
-                        : activeChunk.chunk_type === 'table' && editorTab === 'preview'
-                        ? '표 렌더링 미리보기 (HTML Preview)'
-                        : '청크 본문 텍스트 (Text) 편집'}
-                    </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-xs font-bold text-slate-800">
+                        {activeChunk.chunk_type === 'table' && editorTab === 'raw_html'
+                          ? '표 HTML 원형 코드 (raw_html)'
+                          : activeChunk.chunk_type === 'table' && editorTab === 'preview'
+                          ? '표 렌더링 미리보기 (HTML Preview)'
+                          : '청크 본문 텍스트 (Text) 편집'}
+                      </label>
+
+                      {editorTab !== 'preview' && (
+                        <button
+                          type="button"
+                          onClick={handleStudioRunAiRefine}
+                          disabled={isStudioRefining}
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50 transition"
+                          title="로컬 LLM을 사용하여 비정상적인 줄바꿈과 띄어쓰기를 자동으로 교정합니다"
+                        >
+                          {isStudioRefining ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>AI 교정 중...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3 h-3" />
+                              <span>🪄 AI 교정</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {studioDiffData && (
+                        <button
+                          type="button"
+                          onClick={() => setIsStudioDiffOpen(true)}
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 cursor-pointer transition"
+                          title="AI 교정 결과 Diff 비교 창 열기"
+                        >
+                          <span>Diff 보기</span>
+                        </button>
+                      )}
+                    </div>
                     <span className="text-[11px] text-slate-400">수정 즉시 2열 목록에 반영됩니다.</span>
                   </div>
+
+                  {studioRefineError && (
+                    <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg flex items-center justify-between text-xs">
+                      <span>{studioRefineError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setStudioRefineError(null)}
+                        className="text-rose-400 hover:text-rose-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                   {activeChunk.chunk_type === 'table' && editorTab === 'preview' ? (
                     <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 min-h-[220px] max-h-[360px] overflow-y-auto">
@@ -1850,6 +1927,124 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           parentSections={parentSections}
           onAddSection={onAddSection}
         />
+      )}
+
+      {/* AI Refine Diff View Modal for Studio */}
+      {isStudioDiffOpen && studioDiffData && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Diff Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">AI 텍스트 교정 비교 (Diff View)</h3>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold flex items-center gap-1">
+                      <Bot className="w-3 h-3 text-indigo-600" />
+                      gemma4:12b-mlx
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                      {studioDiffData.elapsed_seconds}s 소요
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    원문 내용을 100% 보존하며 비정상 개행(줄바꿈) 병합 및 표준 띄어쓰기가 적용된 결과를 비교합니다.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStudioDiffOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Diff Stats Bar */}
+            <div className="px-6 py-2.5 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs font-mono text-slate-600">
+              <div className="flex items-center gap-4">
+                <span>원문: <strong className="text-slate-800">{studioDiffData.original_chars}</strong>자</span>
+                <span>→</span>
+                <span>교정본: <strong className="text-emerald-700">{studioDiffData.refined_chars}</strong>자</span>
+                <span className="text-[11px] px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold">
+                  글자 수 변화: {studioDiffData.refined_chars - studioDiffData.original_chars >= 0 ? `+${studioDiffData.refined_chars - studioDiffData.original_chars}` : `${studioDiffData.refined_chars - studioDiffData.original_chars}`}자
+                </span>
+              </div>
+              <div className="hidden sm:block text-[11px] text-slate-500">
+                좌측(원문)과 우측(교정본)을 비교 검토한 후 [교정본 적용]을 누르세요.
+              </div>
+            </div>
+
+            {/* Diff Side-by-Side Split Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 overflow-y-auto">
+              {/* Left Column: Original */}
+              <div className="flex flex-col h-full border border-rose-200 rounded-xl overflow-hidden bg-rose-50/20 shadow-2xs">
+                <div className="px-3.5 py-2 bg-rose-100/60 border-b border-rose-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    원문 (Before / OCR 추출 텍스트)
+                  </span>
+                  <span className="text-[10px] text-rose-700 font-medium">비정상 줄바꿈·띄어쓰기 결함</span>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1 font-sans text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-white/70">
+                  {studioDiffData.original_text}
+                </div>
+              </div>
+
+              {/* Right Column: Refined */}
+              <div className="flex flex-col h-full border border-emerald-200 rounded-xl overflow-hidden bg-emerald-50/20 shadow-2xs">
+                <div className="px-3.5 py-2 bg-emerald-100/60 border-b border-emerald-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    AI 교정본 (After / 정제 완료)
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    줄바꿈 병합·띄어쓰기 정제됨
+                  </span>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1 font-sans text-xs text-slate-800 leading-relaxed whitespace-pre-wrap bg-white/70">
+                  {studioDiffData.refined_text}
+                </div>
+              </div>
+            </div>
+
+            {/* Diff Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                * 원문의 어휘, 숫자, 서식은 100% 보존되며 부자연스러운 개행과 맞춤법만 보정됩니다.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStudioDiffOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition cursor-pointer"
+                >
+                  취소 (Discard)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editorTab === 'raw_html') {
+                      handleFieldChange('raw_html', studioDiffData.refined_text);
+                    } else {
+                      handleFieldChange('text', studioDiffData.refined_text);
+                    }
+                    setIsStudioDiffOpen(false);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>교정본 적용 (Accept)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

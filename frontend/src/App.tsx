@@ -10,6 +10,7 @@ import { ChunkExplorer } from './components/ChunkExplorer';
 import { JsonlModal } from './components/JsonlModal';
 import { ChunkEditModal } from './components/ChunkEditModal';
 import { QdrantConfigModal } from './components/QdrantConfigModal';
+import { LLMConfigModal } from './components/LLMConfigModal';
 import { RetrievalPlayground } from './components/RetrievalPlayground';
 import {
   getPdfList,
@@ -88,6 +89,10 @@ export function App() {
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  // LLM Refine & Config States
+  const [isLLMConfigOpen, setIsLLMConfigOpen] = useState(false);
+  const [autoRefineChunk, setAutoRefineChunk] = useState(false);
 
   // Qdrant & Indexing States
   const [isQdrantConfigOpen, setIsQdrantConfigOpen] = useState(false);
@@ -1364,6 +1369,7 @@ export function App() {
           onSave={handleSaveEtl}
           onReset={handleResetEtl}
           onReindex={handleReindexIds}
+          onOpenLLMConfig={() => setIsLLMConfigOpen(true)}
           onOpenQdrantConfig={() => setIsQdrantConfigOpen(true)}
           onIndexQdrant={handleIndexQdrant}
         />
@@ -1424,6 +1430,10 @@ export function App() {
                     onOpenJsonlModal={setActiveModalChunk}
                     onEditChunk={setEditingChunk}
                     onDeleteChunk={(id) => handleDeleteChunks([id])}
+                    onRefineChunk={(chunk) => {
+                      setEditingChunk(chunk);
+                      setAutoRefineChunk(true);
+                    }}
                     isLoading={isLoadingEtl}
                   />
                 </div>
@@ -1486,7 +1496,11 @@ export function App() {
         chunk={editingChunk}
         parentSections={etlData?.sections || etlData?.parent_sections || []}
         parentChunks={etlData?.parent_chunks || []}
-        onClose={() => setEditingChunk(null)}
+        autoRefine={autoRefineChunk}
+        onClose={() => {
+          setEditingChunk(null);
+          setAutoRefineChunk(false);
+        }}
         onSave={handleUpdateChunk}
         onReassignParentSection={handleReassignParentSection}
       />
@@ -1498,6 +1512,15 @@ export function App() {
         onSaved={(cfg) => {
           setQdrantCollection(cfg.collection_name);
           showToast(`Qdrant 설정이 저장되었습니다. (컬렉션: ${cfg.collection_name})`);
+        }}
+      />
+
+      {/* LLM Configuration Modal */}
+      <LLMConfigModal
+        isOpen={isLLMConfigOpen}
+        onClose={() => setIsLLMConfigOpen(false)}
+        onSaved={(cfg) => {
+          showToast(`LLM 설정이 저장되었습니다. (모델: ${cfg.model_name})`);
         }}
       />
     </div>

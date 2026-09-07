@@ -1,13 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertTriangle, EyeOff, Table2, AlignLeft, Scale, Check, FolderTree, BookOpen, ShieldCheck } from 'lucide-react';
-import type { ChildChunk, ParentSection, ParentChunk } from '../types';
+import {
+  X,
+  Save,
+  AlertTriangle,
+  EyeOff,
+  Table2,
+  AlignLeft,
+  Scale,
+  Check,
+  FolderTree,
+  BookOpen,
+  ShieldCheck,
+  Sparkles,
+  Loader2,
+  Bot,
+  AlertCircle,
+} from 'lucide-react';
+import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '../types';
 import { syncChunkPageMetadata, formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
+import { refineChunkText } from '../api/client';
 
 interface ChunkEditModalProps {
   chunk: ChildChunk | null;
   parentSections: ParentSection[];
   parentChunks?: ParentChunk[];
+  autoRefine?: boolean;
   onClose: () => void;
   onSave: (updatedChunk: ChildChunk) => void;
   onReassignParentSection?: (parentChunkId: string, newSectionId: string) => void;
@@ -17,6 +35,7 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   chunk,
   parentSections,
   parentChunks,
+  autoRefine = false,
   onClose,
   onSave,
   onReassignParentSection,
@@ -35,6 +54,35 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
   const [tableCaption, setTableCaption] = useState(chunk?.table_caption || '');
   const [tableFootnote, setTableFootnote] = useState(chunk?.table_footnote || '');
 
+  // AI Refinement State
+  const [isRefining, setIsRefining] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
+  const [diffData, setDiffData] = useState<LLMRefineResponse | null>(null);
+  const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+
+  const runRefineText = async (targetText: string) => {
+    if (!targetText || !targetText.trim()) {
+      setRefineError('교정할 본문 텍스트가 비어 있습니다.');
+      return;
+    }
+    setIsRefining(true);
+    setRefineError(null);
+    try {
+      const res = await refineChunkText(targetText);
+      setDiffData(res);
+      setIsDiffModalOpen(true);
+    } catch (err: any) {
+      setRefineError(err.message || 'AI 교정 중 오류가 발생했습니다.');
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
+  const handleRunAiRefine = () => {
+    const textToRefine = activeTab === 'raw_html' ? rawHtml : text;
+    runRefineText(textToRefine);
+  };
+
   useEffect(() => {
     if (!chunk) return;
     setText(chunk.text || '');
@@ -46,7 +94,14 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
     setTableCaption(chunk.table_caption || '');
     setTableFootnote(chunk.table_footnote || '');
     setActiveTab('text');
-  }, [chunk]);
+    setRefineError(null);
+    setDiffData(null);
+    setIsDiffModalOpen(false);
+
+    if (autoRefine && chunk.text && chunk.text.trim()) {
+      runRefineText(chunk.text);
+    }
+  }, [chunk, autoRefine]);
 
   if (!chunk) return null;
 
@@ -347,14 +402,51 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
 
           {/* Main Text / HTML / Preview Editor Area */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700">
-                {isTable && activeTab === 'raw_html'
-                  ? '표 원형 HTML 편집'
-                  : isTable && activeTab === 'preview'
-                  ? '표 HTML 렌더링 미리보기'
-                  : '청크 본문 텍스트 (Text) 편집'}
-              </label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs font-bold text-slate-700">
+                  {isTable && activeTab === 'raw_html'
+                    ? '표 원형 HTML 편집'
+                    : isTable && activeTab === 'preview'
+                    ? '표 HTML 렌더링 미리보기'
+                    : '청크 본문 텍스트 (Text) 편집'}
+                </label>
+
+                {/* AI Refine Button */}
+                {activeTab !== 'preview' && (
+                  <button
+                    type="button"
+                    onClick={handleRunAiRefine}
+                    disabled={isRefining}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                    title="로컬 LLM을 사용하여 비정상적인 줄바꿈과 띄어쓰기를 자동으로 정제합니다"
+                  >
+                    {isRefining ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>AI 교정 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3" />
+                        <span>🪄 AI 텍스트 자동 교정</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {diffData && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDiffModalOpen(true)}
+                    className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 cursor-pointer transition"
+                    title="AI 교정 결과 Diff 비교 창 다시 열기"
+                  >
+                    <span>Diff 비교 보기</span>
+                  </button>
+                )}
+              </div>
+
               <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
                 <span>글자 수: <strong className="text-slate-700">{charCount}</strong>자</span>
                 <span>추정 토큰/단어: <strong className="text-indigo-600">~{wordCount}</strong> tokens</span>
@@ -376,6 +468,23 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Error Message if AI Refine failed */}
+            {refineError && (
+              <div className="mb-2 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{refineError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRefineError(null)}
+                  className="text-rose-400 hover:text-rose-600 p-0.5 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {isTable && activeTab === 'preview' ? (
               <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 min-h-[240px] max-h-[380px] overflow-y-auto">
@@ -440,6 +549,125 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Diff View Modal Overlay */}
+      {isDiffModalOpen && diffData && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Diff Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">AI 텍스트 교정 비교 (Diff View)</h3>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold flex items-center gap-1">
+                      <Bot className="w-3 h-3 text-indigo-600" />
+                      gemma4:12b-mlx
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                      {diffData.elapsed_seconds}s 소요
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    원문 내용을 100% 보존하며 비정상 개행(줄바꿈) 병합 및 표준 띄어쓰기가 적용된 결과를 비교합니다.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDiffModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Diff Stats Bar */}
+            <div className="px-6 py-2.5 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs font-mono text-slate-600">
+              <div className="flex items-center gap-4">
+                <span>원문: <strong className="text-slate-800">{diffData.original_chars}</strong>자</span>
+                <span>→</span>
+                <span>교정본: <strong className="text-emerald-700">{diffData.refined_chars}</strong>자</span>
+                <span className="text-[11px] px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold">
+                  글자 수 변화: {diffData.refined_chars - diffData.original_chars >= 0 ? `+${diffData.refined_chars - diffData.original_chars}` : `${diffData.refined_chars - diffData.original_chars}`}자
+                </span>
+              </div>
+              <div className="hidden sm:block text-[11px] text-slate-500">
+                좌측(원문)과 우측(교정본)을 비교 검토한 후 [교정본 적용]을 누르세요.
+              </div>
+            </div>
+
+            {/* Diff Side-by-Side Split Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 overflow-y-auto">
+              {/* Left Column: Original */}
+              <div className="flex flex-col h-full border border-rose-200 rounded-xl overflow-hidden bg-rose-50/20 shadow-2xs">
+                <div className="px-3.5 py-2 bg-rose-100/60 border-b border-rose-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    원문 (Before / OCR 추출 텍스트)
+                  </span>
+                  <span className="text-[10px] text-rose-700 font-medium">비정상 줄바꿈·띄어쓰기 결함</span>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1 font-sans text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-white/70">
+                  {diffData.original_text}
+                </div>
+              </div>
+
+              {/* Right Column: Refined */}
+              <div className="flex flex-col h-full border border-emerald-200 rounded-xl overflow-hidden bg-emerald-50/20 shadow-2xs">
+                <div className="px-3.5 py-2 bg-emerald-100/60 border-b border-emerald-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    AI 교정본 (After / 정제 완료)
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    줄바꿈 병합·띄어쓰기 정제됨
+                  </span>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1 font-sans text-xs text-slate-800 leading-relaxed whitespace-pre-wrap bg-white/70">
+                  {diffData.refined_text}
+                </div>
+              </div>
+            </div>
+
+            {/* Diff Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                * 원문의 어휘, 숫자, 서식은 100% 보존되며 부자연스러운 개행과 맞춤법만 보정됩니다.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDiffModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition cursor-pointer"
+                >
+                  취소 (Discard)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'raw_html') {
+                      setRawHtml(diffData.refined_text);
+                    } else {
+                      setText(diffData.refined_text);
+                    }
+                    setIsDiffModalOpen(false);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>교정본 적용 (Accept)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
