@@ -106,6 +106,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
   const [manualExpandedState, setManualExpandedState] = useState<Record<string, boolean>>({});
+  const [manualParentExpandedState, setManualParentExpandedState] = useState<Record<string, boolean>>({});
 
   // 2. Column 2 State (Chunk Timeline & Selection & Linter)
   const [chunkQuery, setChunkQuery] = useState('');
@@ -133,6 +134,19 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return map;
   }, [parentSections]);
 
+  // Section ID -> ParentChunk[] 매핑
+  const parentChunksBySection = useMemo(() => {
+    const map = new Map<string, ParentChunk[]>();
+    (parentChunks || []).forEach((p) => {
+      const sId = p.section_id || '';
+      if (!map.has(sId)) {
+        map.set(sId, []);
+      }
+      map.get(sId)!.push(p);
+    });
+    return map;
+  }, [parentChunks]);
+
   // Child chunks grouped by section ID
   const childChunksBySection = useMemo(() => {
     const map = new Map<string, ChildChunk[]>();
@@ -149,12 +163,32 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return map;
   }, [childChunks]);
 
-  // Filtered Sections for Column 1 (matches section title OR child chunk id/text/table_caption)
+  // Child chunks grouped by Parent Chunk ID
+  const childChunksByParent = useMemo(() => {
+    const map = new Map<string, ChildChunk[]>();
+    for (const chunk of childChunks) {
+      const pid = chunk.parent_chunk_id || chunk.parent_id || 'unassigned';
+      if (!map.has(pid)) {
+        map.set(pid, []);
+      }
+      map.get(pid)!.push(chunk);
+    }
+    return map;
+  }, [childChunks]);
+
+  // Filtered Sections for Column 1 (matches section title OR child chunk id/text/table_caption OR parent title/text)
   const filteredSections = useMemo(() => {
     if (!sectionSearch.trim()) return parentSections;
     const term = sectionSearch.toLowerCase();
     return parentSections.filter((s) => {
       const titleMatch = s.title.toLowerCase().includes(term);
+      const parents = parentChunksBySection.get(s.id) || [];
+      const parentMatch = parents.some(
+        (p) =>
+          (p.title && p.title.toLowerCase().includes(term)) ||
+          (p.parent_chunk_id && p.parent_chunk_id.toLowerCase().includes(term)) ||
+          (p.text && p.text.toLowerCase().includes(term))
+      );
       const children = childChunksBySection.get(s.id) || [];
       const chunkMatch = children.some(
         (c) =>
@@ -162,9 +196,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           (c.text && c.text.toLowerCase().includes(term)) ||
           (c.table_caption && c.table_caption.toLowerCase().includes(term))
       );
-      return titleMatch || chunkMatch;
+      return titleMatch || parentMatch || chunkMatch;
     });
-  }, [parentSections, sectionSearch, childChunksBySection]);
+  }, [parentSections, sectionSearch, parentChunksBySection, childChunksBySection]);
 
   const isSectionExpanded = React.useCallback(
     (sectionId: string) => {
@@ -188,12 +222,39 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     }));
   };
 
+  const isParentExpanded = React.useCallback(
+    (parentId: string) => {
+      if (manualParentExpandedState[parentId] !== undefined) {
+        return manualParentExpandedState[parentId];
+      }
+      if (sectionSearch.trim()) return true;
+      return true; // 기본 펼침 상태
+    },
+    [manualParentExpandedState, sectionSearch]
+  );
+
+  const toggleExpandParent = (parentId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const current = isParentExpanded(parentId);
+    setManualParentExpandedState((prev) => ({
+      ...prev,
+      [parentId]: !current,
+    }));
+  };
+
   const expandAllSections = () => {
     const next: Record<string, boolean> = {};
     parentSections.forEach((s) => {
       next[s.id] = true;
     });
     setManualExpandedState(next);
+
+    const nextP: Record<string, boolean> = {};
+    (parentChunks || []).forEach((p) => {
+      const pid = p.parent_chunk_id || p.id;
+      if (pid) nextP[pid] = true;
+    });
+    setManualParentExpandedState(nextP);
   };
 
   const collapseAllSections = () => {
@@ -202,11 +263,37 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       next[s.id] = false;
     });
     setManualExpandedState(next);
+
+    const nextP: Record<string, boolean> = {};
+    (parentChunks || []).forEach((p) => {
+      const pid = p.parent_chunk_id || p.id;
+      if (pid) nextP[pid] = false;
+    });
+    setManualParentExpandedState(nextP);
   };
 
   const isAnySectionExpanded = useMemo(() => {
     return parentSections.some((s) => isSectionExpanded(s.id));
   }, [parentSections, isSectionExpanded]);
+
+  const handleSelectParentChunkFromTree = (sectionId: string, parentId: string) => {
+    if (selectedSectionId !== sectionId) {
+      onSelectSection(sectionId);
+    }
+    // 2열의 해당 Parent 컨테이너 박스로 스크롤
+    setTimeout(() => {
+      const boxEl = document.getElementById(`parent-box-${parentId}`);
+      if (boxEl) {
+        boxEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+
+    // 해당 Parent의 첫 번째 Child 청크 활성화
+    const children = childChunksByParent.get(parentId) || [];
+    if (children.length > 0) {
+      setSelectedChunkId(children[0].chunk_id);
+    }
+  };
 
   const handleSelectChildChunkFromTree = (sectionId: string, chunkId: string) => {
     if (selectedSectionId !== sectionId) {
@@ -221,6 +308,115 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
         cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 60);
+  };
+
+  const renderChildChunkItem = (secId: string, chunk: ChildChunk) => {
+    const isChildSelected = activeChunkId === chunk.chunk_id;
+    const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+    const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
+    const isIgnored = Boolean(chunk.is_ignored);
+    const isEdited = Boolean(chunk.is_edited);
+    const pageNum = chunk.page_number || 1;
+
+    let preview = '';
+    if (chunk.table_caption) {
+      preview = `[표] ${chunk.table_caption}`;
+    } else if (chunk.text) {
+      const firstLine = chunk.text.trim().split('\n')[0] || '';
+      preview = firstLine.length > 28 ? firstLine.slice(0, 28) + '…' : firstLine;
+    } else if (chunk.raw_html) {
+      preview = '[HTML 표/데이터]';
+    } else {
+      preview = '(내용 없음)';
+    }
+
+    const shortId = chunk.chunk_id.includes('_')
+      ? chunk.chunk_id.split('_').pop()
+      : chunk.chunk_id;
+
+    return (
+      <div
+        key={chunk.chunk_id}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleSelectChildChunkFromTree(secId, chunk.chunk_id);
+        }}
+        className={`group/child py-1 px-2 rounded-md cursor-pointer flex items-center justify-between text-[11px] transition select-none ${
+          isChildSelected
+            ? 'bg-indigo-600 text-white font-medium shadow-2xs ring-1 ring-indigo-500'
+            : isIgnored
+            ? 'text-slate-400 bg-slate-50/60 hover:bg-slate-100 opacity-60'
+            : 'text-slate-600 hover:bg-indigo-50/80 hover:text-slate-900'
+        }`}
+        title={`${chunk.chunk_id} (p.${pageNum})\n${chunk.text?.slice(0, 200) || ''}`}
+      >
+        <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
+          {isTable ? (
+            <Table2
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isChildSelected ? 'text-amber-200' : 'text-amber-500'
+              }`}
+            />
+          ) : isArticle ? (
+            <Scale
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isChildSelected ? 'text-indigo-200' : 'text-indigo-500'
+              }`}
+            />
+          ) : (
+            <AlignLeft
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isChildSelected ? 'text-indigo-200' : 'text-slate-400'
+              }`}
+            />
+          )}
+          <span
+            className={`font-mono text-[9px] px-1 py-0.2 rounded shrink-0 ${
+              isChildSelected
+                ? 'bg-indigo-700/90 text-indigo-100 font-semibold'
+                : 'bg-slate-100 text-slate-500'
+            }`}
+          >
+            p.{pageNum}
+          </span>
+          <span className="truncate text-xs">
+            {preview}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
+          {isEdited && (
+            <span
+              className={`px-1 py-0.2 rounded font-semibold ${
+                isChildSelected
+                  ? 'bg-indigo-700 text-emerald-300'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              수정
+            </span>
+          )}
+          {isIgnored && (
+            <span
+              className={`px-1 py-0.2 rounded ${
+                isChildSelected
+                  ? 'bg-indigo-700 text-rose-300'
+                  : 'bg-rose-50 text-rose-600'
+              }`}
+            >
+              제외
+            </span>
+          )}
+          <span
+            className={`text-[10px] ${
+              isChildSelected ? 'text-indigo-200 font-bold' : 'text-slate-400'
+            }`}
+          >
+            {shortId}
+          </span>
+        </div>
+      </div>
+    );
   };
 
   // Linter statistics for the entire document (Child 512 / Parent 2048 standards)
@@ -915,128 +1111,148 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       )}
                     </div>
 
-                    {/* Expanded Sub-Tree: Lowest Level (Child Chunks) */}
+                    {/* Expanded Sub-Tree: 3-Tier Hierarchy (Parent Chunks -> Child Chunks) */}
                     {isExpanded && hasChildren && (
                       <div
-                        className={`border-l-2 border-indigo-200/70 space-y-0.5 my-1 transition-all ${
+                        className={`border-l-2 border-indigo-200/70 space-y-1 my-1 transition-all ${
                           sec.level === 0
-                            ? 'ml-5 pl-2'
+                            ? 'ml-4 pl-1.5'
                             : sec.level === 1
-                            ? 'ml-7 pl-2'
+                            ? 'ml-5 pl-1.5'
                             : sec.level === 2
-                            ? 'ml-9 pl-2'
-                            : 'ml-11 pl-2'
+                            ? 'ml-7 pl-1.5'
+                            : 'ml-8 pl-1.5'
                         }`}
                       >
-                        {sectionChildren.map((chunk) => {
-                          const isChildSelected = activeChunkId === chunk.chunk_id;
-                          const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
-                          const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
-                          const isIgnored = Boolean(chunk.is_ignored);
-                          const isEdited = Boolean(chunk.is_edited);
-                          const pageNum = chunk.page_number || 1;
+                        {(() => {
+                          const secParents = parentChunksBySection.get(sec.id) || [];
+                          // Parent Chunks가 존재하는 경우: Parent Chunk 단위로 서브트리 렌더링
+                          if (secParents.length > 0) {
+                            const assignedChildIds = new Set<string>();
+                            secParents.forEach((p) => {
+                              (p.child_chunk_ids || []).forEach((cid) => assignedChildIds.add(cid));
+                            });
+                            const unassignedChildren = sectionChildren.filter(
+                              (c) =>
+                                !assignedChildIds.has(c.chunk_id) &&
+                                (!c.parent_chunk_id || c.parent_chunk_id === 'unassigned')
+                            );
 
-                          // Extract preview text
-                          let preview = '';
-                          if (chunk.table_caption) {
-                            preview = `[표] ${chunk.table_caption}`;
-                          } else if (chunk.text) {
-                            const firstLine = chunk.text.trim().split('\n')[0] || '';
-                            preview = firstLine.length > 28 ? firstLine.slice(0, 28) + '…' : firstLine;
-                          } else if (chunk.raw_html) {
-                            preview = '[HTML 표/데이터]';
-                          } else {
-                            preview = '(내용 없음)';
+                            return (
+                              <>
+                                {secParents.map((parent) => {
+                                  const pid = parent.parent_chunk_id || parent.id || '';
+                                  const pExpanded = isParentExpanded(pid);
+                                  const pChildren =
+                                    childChunksByParent.get(pid) ||
+                                    sectionChildren.filter(
+                                      (c) => (c.parent_chunk_id || c.parent_id) === pid
+                                    );
+                                  const hasPChildren = pChildren.length > 0;
+                                  const shortPid = pid.includes('_p') ? 'P' + pid.split('_p')[1] : pid;
+                                  const isParentActive = activeParentChunk?.parent_chunk_id === pid;
+
+                                  return (
+                                    <div key={pid} className="space-y-0.5">
+                                      {/* Level 2: Parent Chunk Node */}
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSelectParentChunkFromTree(sec.id, pid);
+                                        }}
+                                        className={`group/parent py-1 px-1.5 rounded-md cursor-pointer flex items-center justify-between text-[11px] transition select-none ${
+                                          isParentActive
+                                            ? 'bg-purple-100/90 text-purple-950 font-semibold border border-purple-300 shadow-2xs'
+                                            : 'text-slate-700 hover:bg-purple-50/70 hover:text-purple-950'
+                                        }`}
+                                        title={`[${pid}] ${parent.title || ''}\n토큰: ${parent.token_estimate || 0}T | 자식 청크: ${pChildren.length}개\n${parent.text?.slice(0, 100) || ''}...`}
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
+                                          {hasPChildren ? (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => toggleExpandParent(pid, e)}
+                                              className="p-0.5 text-slate-400 hover:text-purple-600 rounded hover:bg-purple-100 transition cursor-pointer shrink-0"
+                                              title={pExpanded ? '자식 청크 접기' : '자식 청크 펼치기'}
+                                            >
+                                              {pExpanded ? (
+                                                <ChevronDown className="w-3 h-3 text-purple-600" />
+                                              ) : (
+                                                <ChevronRight className="w-3 h-3 text-slate-400" />
+                                              )}
+                                            </button>
+                                          ) : (
+                                            <span className="w-3 h-3 inline-block shrink-0" />
+                                          )}
+
+                                          <Layers
+                                            className={`w-3.5 h-3.5 shrink-0 ${
+                                              isParentActive ? 'text-purple-600' : 'text-purple-500'
+                                            }`}
+                                          />
+                                          <span className="font-mono text-[10px] text-purple-700 font-bold shrink-0">
+                                            [{shortPid}]
+                                          </span>
+                                          <span className="truncate font-medium">
+                                            {parent.title ||
+                                              (parent.text
+                                                ? parent.text.trim().split('\n')[0].slice(0, 24)
+                                                : '부모 문맥')}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
+                                          <span
+                                            className={`px-1 py-0.2 rounded ${
+                                              (parent.token_estimate || 0) > 2048
+                                                ? 'bg-rose-100 text-rose-700 font-bold'
+                                                : 'bg-slate-100 text-slate-500'
+                                            }`}
+                                            title={`토큰: ${parent.token_estimate || 0}T`}
+                                          >
+                                            {parent.token_estimate || 0}T
+                                          </span>
+                                          <span
+                                            className="px-1 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200 font-semibold"
+                                            title={`자식 청크: ${pChildren.length}개`}
+                                          >
+                                            C {pChildren.length}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Level 3: Child Chunks belonging to this Parent */}
+                                      {pExpanded && hasPChildren && (
+                                        <div className="ml-3 pl-2 border-l border-purple-200 space-y-0.5 my-0.5">
+                                          {pChildren.map((chunk) =>
+                                            renderChildChunkItem(sec.id, chunk)
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Unassigned Child Chunks fallback */}
+                                {unassignedChildren.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    <div className="py-0.5 px-1.5 text-[10px] text-slate-400 font-medium italic">
+                                      기타 / 독립 청크 ({unassignedChildren.length}개)
+                                    </div>
+                                    <div className="ml-3 pl-2 border-l border-slate-200 space-y-0.5">
+                                      {unassignedChildren.map((chunk) =>
+                                        renderChildChunkItem(sec.id, chunk)
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            );
                           }
 
-                          const shortId = chunk.chunk_id.includes('_')
-                            ? chunk.chunk_id.split('_').pop()
-                            : chunk.chunk_id;
-
-                          return (
-                            <div
-                              key={chunk.chunk_id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectChildChunkFromTree(sec.id, chunk.chunk_id);
-                              }}
-                              className={`group/child py-1 px-2 rounded-md cursor-pointer flex items-center justify-between text-[11px] transition select-none ${
-                                isChildSelected
-                                  ? 'bg-indigo-600 text-white font-medium shadow-2xs ring-1 ring-indigo-500'
-                                  : isIgnored
-                                  ? 'text-slate-400 bg-slate-50/60 hover:bg-slate-100 opacity-60'
-                                  : 'text-slate-600 hover:bg-indigo-50/80 hover:text-slate-900'
-                              }`}
-                              title={`${chunk.chunk_id} (p.${pageNum})\n${chunk.text?.slice(0, 200) || ''}`}
-                            >
-                              <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
-                                {isTable ? (
-                                  <Table2
-                                    className={`w-3.5 h-3.5 shrink-0 ${
-                                      isChildSelected ? 'text-amber-200' : 'text-amber-500'
-                                    }`}
-                                  />
-                                ) : isArticle ? (
-                                  <Scale
-                                    className={`w-3.5 h-3.5 shrink-0 ${
-                                      isChildSelected ? 'text-indigo-200' : 'text-indigo-500'
-                                    }`}
-                                  />
-                                ) : (
-                                  <AlignLeft
-                                    className={`w-3.5 h-3.5 shrink-0 ${
-                                      isChildSelected ? 'text-indigo-200' : 'text-slate-400'
-                                    }`}
-                                  />
-                                )}
-                                <span
-                                  className={`font-mono text-[9px] px-1 py-0.2 rounded shrink-0 ${
-                                    isChildSelected
-                                      ? 'bg-indigo-700/90 text-indigo-100 font-semibold'
-                                      : 'bg-slate-100 text-slate-500'
-                                  }`}
-                                >
-                                  p.{pageNum}
-                                </span>
-                                <span className="truncate text-xs">
-                                  {preview}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
-                                {isEdited && (
-                                  <span
-                                    className={`px-1 py-0.2 rounded font-semibold ${
-                                      isChildSelected
-                                        ? 'bg-indigo-700 text-emerald-300'
-                                        : 'bg-emerald-100 text-emerald-700'
-                                    }`}
-                                  >
-                                    수정
-                                  </span>
-                                )}
-                                {isIgnored && (
-                                  <span
-                                    className={`px-1 py-0.2 rounded ${
-                                      isChildSelected
-                                        ? 'bg-indigo-700 text-rose-300'
-                                        : 'bg-rose-50 text-rose-600'
-                                    }`}
-                                  >
-                                    제외
-                                  </span>
-                                )}
-                                <span
-                                  className={`text-[10px] ${
-                                    isChildSelected ? 'text-indigo-200 font-bold' : 'text-slate-400'
-                                  }`}
-                                >
-                                  {shortId}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                          // Legacy document fallback (no parent_chunks): render child chunks directly
+                          return sectionChildren.map((chunk) => renderChildChunkItem(sec.id, chunk));
+                        })()}
                       </div>
                     )}
                   </div>
@@ -1320,7 +1536,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 return (
                   <div
                     key={pid}
-                    className="rounded-xl border border-slate-200/90 bg-slate-100/70 p-2.5 space-y-2 shadow-2xs"
+                    id={`parent-box-${pid}`}
+                    className="rounded-xl border border-slate-200/90 bg-slate-100/70 p-2.5 space-y-2 shadow-2xs transition"
                   >
                     {/* Parent Container Box Header */}
                     <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80">

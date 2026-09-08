@@ -85,6 +85,7 @@ export function App() {
   const [editingChunk, setEditingChunk] = useState<ChildChunk | null>(null);
 
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedParentChunkId, setSelectedParentChunkId] = useState<string | null>(null);
   const [activeModalChunk, setActiveModalChunk] = useState<ChildChunk | null>(null);
 
   // Toast notification state
@@ -1440,7 +1441,17 @@ export function App() {
                     sections={etlData?.sections || etlData?.parent_sections || []}
                     parentChunks={etlData?.parent_chunks || []}
                     selectedSectionId={selectedSectionId}
-                    onSelectSection={setSelectedSectionId}
+                    selectedParentChunkId={selectedParentChunkId}
+                    onSelectSection={(id) => {
+                      setSelectedSectionId(id);
+                      setSelectedParentChunkId(null);
+                    }}
+                    onSelectParentChunk={(parentId, sectionId) => {
+                      setSelectedParentChunkId(parentId);
+                      if (sectionId) {
+                        setSelectedSectionId(sectionId);
+                      }
+                    }}
                     isLoading={isLoadingEtl}
                   />
                 </div>
@@ -1450,8 +1461,14 @@ export function App() {
                   <ChunkExplorer
                     chunks={etlData?.child_chunks || []}
                     parentSections={etlData?.sections || etlData?.parent_sections || []}
+                    parentChunks={etlData?.parent_chunks || []}
                     selectedSectionId={selectedSectionId}
-                    onClearSectionFilter={() => setSelectedSectionId(null)}
+                    selectedParentChunkId={selectedParentChunkId}
+                    onClearSectionFilter={() => {
+                      setSelectedSectionId(null);
+                      setSelectedParentChunkId(null);
+                    }}
+                    onClearParentFilter={() => setSelectedParentChunkId(null)}
                     onOpenJsonlModal={setActiveModalChunk}
                     onEditChunk={setEditingChunk}
                     onDeleteChunk={(id) => handleDeleteChunks([id])}
