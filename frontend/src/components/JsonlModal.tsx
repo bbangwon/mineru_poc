@@ -88,32 +88,32 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 text-slate-800 dark:text-slate-100 transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2">
-            <Code2 className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-bold text-slate-800 text-sm">RAG JSONL 레코드 미리보기 (Small-to-Big Retrieval)</h3>
+            <Code2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">RAG JSONL 레코드 미리보기 (Small-to-Big Retrieval)</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer p-1"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-xs text-slate-500">
-          Vector DB 검색용 <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600 font-mono">text</code>와
-          LLM 프롬프트 생성용 <code className="bg-slate-100 px-1 py-0.5 rounded text-emerald-600 font-mono">parent_context_text</code>가
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Vector DB 검색용 <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono">text</code>와
+          LLM 프롬프트 생성용 <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-emerald-600 dark:text-emerald-400 font-mono">parent_context_text</code>가
           분리 적재되는 표준 3단계 계층 JSONL 단일 레코드입니다.
         </p>
 
         {/* Content Box */}
         <div className="relative">
-          <pre className="bg-slate-900 text-emerald-400 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-96 whitespace-pre-wrap break-all select-all">
+          <pre className="bg-slate-950 text-emerald-400 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-96 whitespace-pre-wrap break-all select-all border border-slate-800">
             {jsonString}
           </pre>
         </div>
@@ -123,12 +123,12 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
           <button
             type="button"
             onClick={handleCopy}
-            className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold px-3 py-2 rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+            className="text-xs bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs border border-indigo-200 dark:border-indigo-800"
           >
             {copied ? (
               <>
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span className="text-emerald-700">복사 완료!</span>
+                <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-emerald-700 dark:text-emerald-400">복사 완료!</span>
               </>
             ) : (
               <>
@@ -140,7 +140,7 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 rounded-lg transition cursor-pointer"
+            className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-2xs"
           >
             닫기
           </button>

@@ -37,7 +37,6 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
       const res = await getQdrantCollections();
       if (res.collections && res.collections.length > 0) {
         setAvailableCollections(res.collections);
-        // collectionName이 주어지지 않은 경우 서버 기본 컬렉션 설정
         setSelectedCol((prev) => prev || res.current_collection || res.collections[0]);
       }
     } catch (e) {
@@ -92,19 +91,19 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
       {/* 검색 바 영역 */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md">
+      <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md shadow-2xs transition-colors">
         <div className="max-w-4xl mx-auto space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <span>🔍 하이브리드 RRF 검색 플레이그라운드</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-semibold">
                   BGE-m3-ko + Kiwi Modifier.IDF
                 </span>
               </h1>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 인덱싱된 Qdrant 컬렉션에서 Dense 의미론적 검색과 Kiwi 형태소 키워드 검색을 RRF로 최적 융합합니다.
               </p>
             </div>
@@ -112,7 +111,7 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               <button
                 type="button"
                 onClick={onOpenConfig}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 transition flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
                 <span>⚙️ Qdrant 설정</span>
               </button>
@@ -122,21 +121,21 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
           {/* 검색 인풋 그룹 */}
           <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
             {/* 컬렉션 선택 드롭다운 */}
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 shrink-0">
-              <span className="text-[11px] text-slate-400">컬렉션:</span>
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 shrink-0 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">컬렉션:</span>
               <select
                 value={selectedCol}
                 onChange={(e) => setSelectedCol(e.target.value)}
-                className="bg-transparent text-xs text-indigo-400 font-mono font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
+                className="bg-transparent text-xs text-indigo-600 dark:text-indigo-400 font-mono font-bold focus:outline-hidden cursor-pointer max-w-[140px] truncate"
                 title="검색 대상 Qdrant 컬렉션"
               >
                 {availableCollections.map((col) => (
-                  <option key={col} value={col} className="bg-slate-900 text-slate-200 font-mono">
+                  <option key={col} value={col} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono">
                     {col}
                   </option>
                 ))}
                 {!availableCollections.includes(selectedCol) && selectedCol && (
-                  <option value={selectedCol} className="bg-slate-900 text-slate-200 font-mono">
+                  <option value={selectedCol} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono">
                     {selectedCol} (지정됨)
                   </option>
                 )}
@@ -155,14 +154,14 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="한국어 자연어 질문 또는 핵심 키워드를 입력하세요... (예: 자문의사 자격 요건)"
-                className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-inner"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-2xs font-medium"
               />
             </div>
 
             <select
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
-              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer shrink-0"
+              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-hidden focus:border-indigo-500 cursor-pointer shrink-0 shadow-2xs"
             >
               <option value={5}>Top 5</option>
               <option value={10}>Top 10</option>
@@ -173,7 +172,7 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               type="button"
               onClick={() => handleSearch()}
               disabled={isLoading}
-              className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 transition disabled:opacity-50 flex items-center gap-2 shrink-0"
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs sm:text-sm font-bold text-white shadow-md shadow-indigo-600/20 transition disabled:opacity-50 flex items-center gap-2 shrink-0 cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -191,13 +190,13 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
 
           {/* 추천 샘플 질의 */}
           <div className="flex items-center gap-2 flex-wrap pt-1">
-            <span className="text-[11px] text-slate-500">추천 질의:</span>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">추천 질의:</span>
             {sampleQueries.map((sq, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => handleSearch(sq)}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-white transition"
+                className="text-[11px] px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer shadow-2xs font-medium"
               >
                 {sq}
               </button>
@@ -207,19 +206,19 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
       </div>
 
       {/* 검색 결과 영역 */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="max-w-4xl mx-auto space-y-4">
           {errorMsg && (
-            <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center justify-between">
+            <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between shadow-2xs">
               <span>{errorMsg}</span>
             </div>
           )}
 
           {searchResponse && (
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1">
               <span>
-                컬렉션 <strong className="text-slate-200 font-mono">{searchResponse.collection_name}</strong> 에서 총{' '}
-                <strong className="text-indigo-400">{searchResponse.total_matches}개</strong> 청크 검색됨
+                컬렉션 <strong className="text-slate-800 dark:text-slate-200 font-mono">{searchResponse.collection_name}</strong> 에서 총{' '}
+                <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{searchResponse.total_matches}개</strong> 청크 검색됨
               </span>
             </div>
           )}
@@ -229,27 +228,27 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
             <div
               key={item.id}
               onClick={() => setSelectedResult(item)}
-              className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 transition shadow-sm hover:shadow-indigo-500/5 cursor-pointer group space-y-3"
+              className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all shadow-2xs hover:shadow-xs cursor-pointer group space-y-3"
             >
               {/* 상단 메타데이터 바 */}
               <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-xs border border-indigo-500/30">
+                  <span className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs border border-indigo-500/30">
                     {item.rank}
                   </span>
-                  <span className="font-mono text-slate-300 font-semibold">{item.chunk_id}</span>
+                  <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{item.chunk_id}</span>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
                       item.chunk_type === 'table'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                         : item.chunk_type === 'article_clause'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                        : 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30'
                     }`}
                   >
                     {item.chunk_type}
                   </span>
-                  <span className="text-slate-500 text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
                     {item.page_number
                       ? (item.page_end && item.page_end > item.page_number
                           ? `p.${item.page_number}~${item.page_end}`
@@ -259,9 +258,9 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
-                    <span className="text-slate-400 text-[10px]">RRF Score:</span>
-                    <span className="text-indigo-300 font-mono font-bold text-xs">{item.score.toFixed(4)}</span>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <span className="text-slate-500 dark:text-slate-400 text-[10px]">RRF Score:</span>
+                    <span className="text-indigo-600 dark:text-indigo-400 font-mono font-bold text-xs">{item.score.toFixed(4)}</span>
                   </div>
                   {onSelectChunk && (
                     <button
@@ -270,7 +269,7 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                         e.stopPropagation();
                         onSelectChunk(item.chunk_id);
                       }}
-                      className="text-[11px] text-slate-400 hover:text-indigo-300 hover:underline"
+                      className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
                     >
                       에디터에서 보기 →
                     </button>
@@ -280,12 +279,12 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
 
               {/* 브레드크럼 */}
               {(item.breadcrumbs || item.heading_hierarchy) && (item.breadcrumbs || item.heading_hierarchy)!.length > 0 && (
-                <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-slate-500">📁</span>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-slate-400">📁</span>
                   {(item.breadcrumbs || item.heading_hierarchy)!.map((h, i) => (
                     <React.Fragment key={i}>
-                      {i > 0 && <span className="text-slate-600">/</span>}
-                      <span className="text-slate-300">{h}</span>
+                      {i > 0 && <span className="text-slate-300 dark:text-slate-600">/</span>}
+                      <span className="text-slate-700 dark:text-slate-300 font-medium">{h}</span>
                     </React.Fragment>
                   ))}
                 </div>
@@ -297,25 +296,25 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                   {Object.entries(item.metadata).slice(0, 4).map(([k, v]) => (
                     <span
                       key={k}
-                      className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono"
+                      className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono font-medium"
                     >
-                      {k}: <span className="text-indigo-300">{String(v)}</span>
+                      {k}: <span className="text-indigo-600 dark:text-indigo-400">{String(v)}</span>
                     </span>
                   ))}
                   {Object.keys(item.metadata).length > 4 && (
-                    <span className="text-[10px] text-slate-500">+{Object.keys(item.metadata).length - 4}개</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">+{Object.keys(item.metadata).length - 4}개</span>
                   )}
                 </div>
               )}
 
               {/* 텍스트 본문 */}
-              <div className="text-xs text-slate-200 leading-relaxed bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 font-sans whitespace-pre-wrap max-h-36 overflow-y-auto">
+              <div className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-950/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800/80 font-sans whitespace-pre-wrap max-h-36 overflow-y-auto">
                 {item.text}
               </div>
 
               {/* 표 이미지 미리보기 */}
               {item.image_url && (
-                <div className="mt-2 rounded-xl overflow-hidden border border-slate-800 max-w-sm">
+                <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 max-w-sm">
                   <img src={item.image_url} alt="Chunk Media" className="w-full object-cover" />
                 </div>
               )}
@@ -323,10 +322,10 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
           ))}
 
           {!searchResponse && !isLoading && (
-            <div className="text-center py-20 text-slate-500 space-y-3">
+            <div className="text-center py-20 text-slate-400 dark:text-slate-500 space-y-3">
               <div className="text-4xl">📚</div>
-              <p className="text-sm">검색어를 입력하고 하이브리드 RRF 검색 성능을 테스트해보세요.</p>
-              <p className="text-xs text-slate-600">
+              <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">검색어를 입력하고 하이브리드 RRF 검색 성능을 테스트해보세요.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-600">
                 BGE-m3-ko 1024차원 벡터와 Kiwi 형태소 기반의 Qdrant Modifier.IDF가 실시간 결합됩니다.
               </p>
             </div>
@@ -336,29 +335,30 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
 
       {/* 결과 상세 모달 */}
       {selectedResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transition-colors">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-100 text-sm">청크 상세 정보</span>
-                <span className="font-mono text-xs text-indigo-400">({selectedResult.chunk_id})</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">청크 상세 정보</span>
+                <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">({selectedResult.chunk_id})</span>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedResult(null)}
-                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800"
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 ✕
               </button>
             </div>
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-800/50 rounded-xl">
+              <div className="grid grid-cols-2 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl">
                 <div>
-                  <span className="text-slate-400">RRF Score:</span>
-                  <span className="ml-2 font-mono font-bold text-indigo-300">{selectedResult.score}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-semibold">RRF Score:</span>
+                  <span className="ml-2 font-mono font-bold text-indigo-600 dark:text-indigo-400">{selectedResult.score}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">페이지:</span>
-                  <span className="ml-2 text-slate-200">
+                  <span className="text-slate-500 dark:text-slate-400 font-semibold">페이지:</span>
+                  <span className="ml-2 text-slate-800 dark:text-slate-200 font-medium">
                     {selectedResult.page_number
                       ? (selectedResult.page_end && selectedResult.page_end > selectedResult.page_number
                           ? `p.${selectedResult.page_number}~${selectedResult.page_end}`
@@ -367,17 +367,17 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">타입:</span>
-                  <span className="ml-2 text-slate-200">{selectedResult.chunk_type}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-semibold">타입:</span>
+                  <span className="ml-2 text-slate-800 dark:text-slate-200 font-medium">{selectedResult.chunk_type}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">추정 토큰 수:</span>
-                  <span className="ml-2 text-slate-200">{selectedResult.token_count || selectedResult.token_estimate || 0}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-semibold">추정 토큰 수:</span>
+                  <span className="ml-2 text-slate-800 dark:text-slate-200 font-medium">{selectedResult.token_count || selectedResult.token_estimate || 0}</span>
                 </div>
                 {selectedResult.parent_chunk_id && (
                   <div className="col-span-2">
-                    <span className="text-slate-400">부모 청크 ID:</span>
-                    <span className="ml-2 font-mono text-indigo-400">{selectedResult.parent_chunk_id}</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold">부모 청크 ID:</span>
+                    <span className="ml-2 font-mono text-indigo-600 dark:text-indigo-400">{selectedResult.parent_chunk_id}</span>
                   </div>
                 )}
               </div>
@@ -385,14 +385,14 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               {/* 메타데이터 상세 */}
               {selectedResult.metadata && Object.keys(selectedResult.metadata).length > 0 && (
                 <div>
-                  <span className="block text-slate-400 font-semibold mb-1">메타데이터:</span>
-                  <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-wrap gap-2">
+                  <span className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">메타데이터:</span>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap gap-2">
                     {Object.entries(selectedResult.metadata).map(([k, v]) => (
                       <span
                         key={k}
-                        className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 font-mono"
+                        className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono font-medium shadow-2xs"
                       >
-                        <span className="text-slate-400">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                        <span className="text-slate-500 dark:text-slate-400">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
                       </span>
                     ))}
                   </div>
@@ -401,8 +401,8 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
 
               {/* 검색 자식 본문 텍스트 */}
               <div>
-                <span className="block text-slate-400 font-semibold mb-1">자식 청크 본문 (검색 대상):</span>
-                <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto">
+                <span className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">자식 청크 본문 (검색 대상):</span>
+                <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto">
                   {selectedResult.text}
                 </div>
               </div>
@@ -410,12 +410,12 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               {/* 부모 청크 컨텍스트 (LLM 생성 주입용) */}
               {selectedResult.parent_text && (
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                      <span className="text-indigo-400">◈</span> 부모 청크 문맥 (LLM 주입용 Parent Context):
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-1.5">
+                      <span className="text-indigo-600 dark:text-indigo-400">◈</span> 부모 청크 문맥 (LLM 주입용 Parent Context):
                     </span>
                   </div>
-                  <div className="p-4 bg-indigo-950/20 rounded-xl border border-indigo-900/40 text-slate-300 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto text-xs">
+                  <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-200 dark:border-indigo-900/40 text-slate-800 dark:text-slate-300 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto text-xs">
                     {selectedResult.parent_text}
                   </div>
                 </div>
@@ -423,15 +423,16 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
 
               {selectedResult.image_url && (
                 <div>
-                  <span className="block text-slate-400 font-semibold mb-1">표/이미지:</span>
-                  <img src={selectedResult.image_url} alt="Media" className="rounded-xl border border-slate-800 max-h-60" />
+                  <span className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">표/이미지:</span>
+                  <img src={selectedResult.image_url} alt="Media" className="rounded-xl border border-slate-200 dark:border-slate-800 max-h-60" />
                 </div>
               )}
             </div>
-            <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex justify-end">
+            <div className="px-6 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 flex justify-end">
               <button
+                type="button"
                 onClick={() => setSelectedResult(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
               >
                 닫기
               </button>

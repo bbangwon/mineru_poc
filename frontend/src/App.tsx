@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTheme } from './utils/useTheme';
 import { Header } from './components/Header';
 import { SidebarNav } from './components/SidebarNav';
 import type { ActiveTab } from './components/SidebarNav';
@@ -66,6 +67,7 @@ function normalizeEtlData(data: any): HierarchicalEtlResult {
 }
 
 export function App() {
+  const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [pdfList, setPdfList] = useState<PdfItem[]>([]);
   const [globalStats, setGlobalStats] = useState<GlobalStats | undefined>(undefined);
@@ -1889,14 +1891,14 @@ export function App() {
   const ignoredChunksCount = etlData?.child_chunks.filter((c) => c.is_ignored).length || 0;
 
   return (
-    <div className="bg-slate-50 text-slate-800 h-screen flex font-sans overflow-hidden">
+    <div className="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 h-screen flex font-sans overflow-hidden transition-colors">
       {/* Toast Notification */}
       {toast && (
         <div
           className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 border transition-all animate-bounce ${
             toast.isError
-              ? 'bg-rose-50 border-rose-200 text-rose-700'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              ? 'bg-rose-50 dark:bg-rose-950/80 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+              : 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
           }`}
         >
           <span>{toast.message}</span>
@@ -1912,6 +1914,8 @@ export function App() {
         ignoredChunksCount={ignoredChunksCount}
         isDirty={isDirty}
         activePdf={selectedPdf}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Right Main Content Area */}
@@ -1926,6 +1930,8 @@ export function App() {
           isResetting={isResetting}
           isIndexingQdrant={isIndexingQdrant}
           qdrantIndexProgress={qdrantIndexProgress}
+          theme={theme}
+          setTheme={setTheme}
           onSave={handleSaveEtl}
           onReset={handleResetEtl}
           onReindex={handleReindexIds}

@@ -9,6 +9,8 @@ import {
   FileText,
   Search,
 } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
+import type { ThemeMode } from '../utils/useTheme';
 
 export type ActiveTab = 'dashboard' | 'studio' | 'search';
 
@@ -20,6 +22,8 @@ interface SidebarNavProps {
   ignoredChunksCount: number;
   isDirty: boolean;
   activePdf?: string;
+  theme: ThemeMode;
+  setTheme: (t: ThemeMode) => void;
 }
 
 export const SidebarNav: React.FC<SidebarNavProps> = ({
@@ -30,28 +34,30 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   ignoredChunksCount,
   isDirty,
   activePdf,
+  theme,
+  setTheme,
 }) => {
   return (
-    <aside className="w-16 sm:w-60 bg-slate-900 text-slate-300 flex flex-col shrink-0 border-r border-slate-800 transition-all select-none">
+    <aside className="w-16 sm:w-60 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 flex flex-col shrink-0 border-r border-slate-200 dark:border-slate-800 transition-colors select-none">
       {/* Top Brand Header */}
-      <div className="h-16 px-4 flex items-center gap-3 border-b border-slate-800/80 bg-slate-950/40">
+      <div className="h-16 px-4 flex items-center gap-3 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/40">
         <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 shrink-0">
           <Sparkles className="w-4 h-4" />
         </div>
         <div className="hidden sm:block overflow-hidden">
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-sm text-white tracking-tight">MinerU Studio</span>
-            <span className="text-[10px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-300 font-mono rounded border border-indigo-500/30">
+            <span className="font-bold text-sm text-slate-900 dark:text-white tracking-tight">MinerU Studio</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 font-mono rounded border border-indigo-500/30">
               v2.0
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 truncate">RAG 계층 청킹 파이프라인</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">RAG 계층 청킹 파이프라인</p>
         </div>
       </div>
 
       {/* Navigation Links */}
       <div className="p-3 space-y-1.5 flex-1">
-        <div className="hidden sm:block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="hidden sm:block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
           워크스페이스
         </div>
 
@@ -61,8 +67,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           onClick={() => setActiveTab('dashboard')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             activeTab === 'dashboard'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
           }`}
           title="대시보드 (문서 ETL 파이프라인 현황)"
         >
@@ -79,8 +85,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           onClick={() => setActiveTab('studio')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer relative ${
             activeTab === 'studio'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
           }`}
           title="청크 스튜디오 (3단 계층 & 청크 에디터)"
         >
@@ -101,8 +107,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
                   activeTab === 'studio'
-                    ? 'bg-indigo-700/80 text-white'
-                    : 'bg-slate-800 text-slate-300'
+                    ? 'bg-indigo-700 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
                 {totalChunks}
@@ -117,64 +123,73 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           onClick={() => setActiveTab('search')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             activeTab === 'search'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
           }`}
           title="하이브리드 검색 플레이그라운드 (Qdrant RRF)"
         >
           <Search className="w-4 h-4 shrink-0" />
           <div className="hidden sm:flex flex-1 items-center justify-between">
             <span>하이브리드 검색</span>
-            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 py-0.2 rounded">RRF</span>
+            <span className="text-[10px] bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 px-1 py-0.2 rounded font-medium">RRF</span>
           </div>
         </button>
 
-        {/* Section Divider */}
+        {/* Section Divider & Statistics */}
         <div className="pt-4 hidden sm:block">
-          <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             임베딩 통계
           </div>
           <div className="px-2.5 py-2 space-y-2 text-xs">
-            <div className="flex items-center justify-between text-slate-400">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-slate-400" />
+                <Layers className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                 전체 청크
               </span>
-              <span className="font-mono text-slate-200 font-semibold">{totalChunks}</span>
+              <span className="font-mono text-slate-900 dark:text-slate-200 font-semibold">{totalChunks}</span>
             </div>
 
-            <div className="flex items-center justify-between text-slate-400">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-amber-500" />
                 수정된 청크
               </span>
-              <span className="font-mono text-amber-300 font-semibold">{editedChunksCount}</span>
+              <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">{editedChunksCount}</span>
             </div>
 
-            <div className="flex items-center justify-between text-slate-400">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
-                <FileCode2 className="w-3.5 h-3.5 text-rose-400" />
+                <FileCode2 className="w-3.5 h-3.5 text-rose-500" />
                 임베딩 제외
               </span>
-              <span className="font-mono text-rose-300 font-semibold">{ignoredChunksCount}</span>
+              <span className="font-mono text-rose-600 dark:text-rose-400 font-semibold">{ignoredChunksCount}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Footer: Active PDF Status */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
+      {/* Bottom Footer: Theme Switcher & Active PDF Status */}
+      <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/40 space-y-3">
+        {/* Theme Segment Switcher in Sidebar */}
         <div className="hidden sm:block">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
-            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+            화면 테마
+          </div>
+          <ThemeToggle theme={theme} setTheme={setTheme} />
+        </div>
+
+        <div className="hidden sm:block">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+            <FileText className="w-3.5 h-3.5 text-indigo-500" />
             <span>현재 작업 문서</span>
           </div>
-          <p className="text-xs text-slate-200 truncate font-medium" title={activePdf || '문서 미선택'}>
+          <p className="text-xs text-slate-900 dark:text-slate-200 truncate font-medium" title={activePdf || '문서 미선택'}>
             {activePdf || '문서 미선택'}
           </p>
         </div>
-        <div className="sm:hidden flex justify-center text-slate-400">
-          <FileText className="w-4 h-4 text-indigo-400" />
+        <div className="sm:hidden flex flex-col items-center gap-2 text-slate-400">
+          <ThemeToggle theme={theme} setTheme={setTheme} compact />
+          <FileText className="w-4 h-4 text-indigo-500" />
         </div>
       </div>
     </aside>

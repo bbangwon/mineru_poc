@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 .prose-custom table {
   width: 100%;
   border-collapse: collapse;
@@ -27,3 +29,17 @@
 .prose-custom h3 { font-size: 1rem; }
 .prose-custom p { margin-bottom: 0.6rem; line-height: 1.55; }
 
+/* Dark mode overrides for prose-custom */
+.dark .prose-custom th, .dark .prose-custom td {
+  border-color: #334155;
+}
+.dark .prose-custom th {
+  background-color: #1e293b;
+  color: #cbd5e1;
+}
+.dark .prose-custom h1, .dark .prose-custom h2, .dark .prose-custom h3 {
+  color: #f1f5f9;
+}
+.dark .prose-custom h1 {
+  border-bottom-color: #334155;
+}
