@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   FolderTree,
   ChevronRight,
+  ChevronDown,
   ShieldCheck,
   Sparkles,
   Info,
@@ -104,6 +105,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [sectionSearch, setSectionSearch] = useState('');
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [manualExpandedState, setManualExpandedState] = useState<Record<string, boolean>>({});
 
   // 2. Column 2 State (Chunk Timeline & Selection & Linter)
   const [chunkQuery, setChunkQuery] = useState('');
@@ -131,12 +133,95 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     return map;
   }, [parentSections]);
 
-  // Filtered Sections for Column 1
+  // Child chunks grouped by section ID
+  const childChunksBySection = useMemo(() => {
+    const map = new Map<string, ChildChunk[]>();
+    for (const chunk of childChunks) {
+      const secId = chunk.section_id || chunk.parent_id || '';
+      if (!secId) continue;
+      const list = map.get(secId);
+      if (list) {
+        list.push(chunk);
+      } else {
+        map.set(secId, [chunk]);
+      }
+    }
+    return map;
+  }, [childChunks]);
+
+  // Filtered Sections for Column 1 (matches section title OR child chunk id/text/table_caption)
   const filteredSections = useMemo(() => {
     if (!sectionSearch.trim()) return parentSections;
     const term = sectionSearch.toLowerCase();
-    return parentSections.filter((s) => s.title.toLowerCase().includes(term));
-  }, [parentSections, sectionSearch]);
+    return parentSections.filter((s) => {
+      const titleMatch = s.title.toLowerCase().includes(term);
+      const children = childChunksBySection.get(s.id) || [];
+      const chunkMatch = children.some(
+        (c) =>
+          c.chunk_id.toLowerCase().includes(term) ||
+          (c.text && c.text.toLowerCase().includes(term)) ||
+          (c.table_caption && c.table_caption.toLowerCase().includes(term))
+      );
+      return titleMatch || chunkMatch;
+    });
+  }, [parentSections, sectionSearch, childChunksBySection]);
+
+  const isSectionExpanded = React.useCallback(
+    (sectionId: string) => {
+      if (manualExpandedState[sectionId] !== undefined) {
+        return manualExpandedState[sectionId];
+      }
+      // Search active or currently selected section defaults to expanded
+      if (sectionSearch.trim()) return true;
+      if (selectedSectionId === sectionId) return true;
+      return false;
+    },
+    [manualExpandedState, sectionSearch, selectedSectionId]
+  );
+
+  const toggleExpandSection = (sectionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const current = isSectionExpanded(sectionId);
+    setManualExpandedState((prev) => ({
+      ...prev,
+      [sectionId]: !current,
+    }));
+  };
+
+  const expandAllSections = () => {
+    const next: Record<string, boolean> = {};
+    parentSections.forEach((s) => {
+      next[s.id] = true;
+    });
+    setManualExpandedState(next);
+  };
+
+  const collapseAllSections = () => {
+    const next: Record<string, boolean> = {};
+    parentSections.forEach((s) => {
+      next[s.id] = false;
+    });
+    setManualExpandedState(next);
+  };
+
+  const isAnySectionExpanded = useMemo(() => {
+    return parentSections.some((s) => isSectionExpanded(s.id));
+  }, [parentSections, isSectionExpanded]);
+
+  const handleSelectChildChunkFromTree = (sectionId: string, chunkId: string) => {
+    if (selectedSectionId !== sectionId) {
+      onSelectSection(sectionId);
+    }
+    setSelectedChunkId(chunkId);
+
+    // Smooth scroll into view in Column 2
+    setTimeout(() => {
+      const cardEl = document.getElementById(`chunk-card-${chunkId}`);
+      if (cardEl) {
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 60);
+  };
 
   // Linter statistics for the entire document (Child 512 / Parent 2048 standards)
   const linterStats = useMemo(() => {
@@ -556,6 +641,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               </h2>
             </div>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={isAnySectionExpanded ? collapseAllSections : expandAllSections}
+                className="text-[11px] font-medium text-slate-500 hover:text-indigo-600 transition cursor-pointer px-1.5 py-0.5 rounded border border-slate-200 hover:border-indigo-200 bg-white shadow-2xs"
+                title={isAnySectionExpanded ? '모든 하위 청크 접기' : '모든 하위 청크 펼치기'}
+              >
+                {isAnySectionExpanded ? '전체 접기' : '전체 펼치기'}
+              </button>
               {onAddSection && (
                 <button
                   type="button"
@@ -588,7 +681,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 type="text"
                 value={sectionSearch}
                 onChange={(e) => setSectionSearch(e.target.value)}
-                placeholder="섹션 제목 검색..."
+                placeholder="섹션 제목 / 청크 내용 검색..."
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:outline-hidden placeholder-slate-400"
               />
             </div>
@@ -617,7 +710,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           {/* Quick Guide */}
           <div className="px-3 py-1.5 bg-indigo-50/40 border-b border-indigo-100/60 flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
             <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-            <span className="truncate">더블클릭 또는 연필로 수정, 휴지통으로 삭제</span>
+            <span className="truncate">섹션을 열어 최하위 청크(Child)를 보고 바로 이동할 수 있습니다.</span>
           </div>
 
           {/* Section List */}
@@ -640,161 +733,311 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                 const isActive = selectedSectionId === sec.id;
                 const isEditingThis = editingSectionId === sec.id;
+                const isExpanded = isSectionExpanded(sec.id);
+                const sectionChildren = childChunksBySection.get(sec.id) || [];
+                const hasChildren = sectionChildren.length > 0;
 
                 return (
-                  <div
-                    key={sec.id}
-                    onClick={() => {
-                      if (!isEditingThis) onSelectSection(sec.id);
-                    }}
-                    onDoubleClick={(e) => startEditSection(sec, e)}
-                    className={`group py-2 px-2.5 rounded-lg cursor-pointer flex items-center justify-between transition border-l-3 select-none ${indentClass} ${
-                      isActive
-                        ? 'bg-indigo-50 border-indigo-600 text-indigo-900 font-semibold shadow-2xs'
-                        : 'border-transparent text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {isEditingThis ? (
-                      <div
-                        className="flex items-center gap-1.5 w-full"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="text"
-                          value={editingSectionTitle}
-                          onChange={(e) => setEditingSectionTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveEditSection(sec.id);
-                            if (e.key === 'Escape') cancelEditSection();
-                          }}
-                          autoFocus
-                          className="flex-1 text-xs bg-white border border-indigo-500 rounded px-2 py-1 font-semibold focus:outline-hidden ring-1 ring-indigo-500 text-slate-900"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => saveEditSection(sec.id)}
-                          className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                          title="저장 (Enter)"
+                  <div key={sec.id} className="space-y-0.5">
+                    <div
+                      onClick={() => {
+                        if (!isEditingThis) {
+                          onSelectSection(sec.id);
+                          setManualExpandedState((prev) => ({ ...prev, [sec.id]: true }));
+                        }
+                      }}
+                      onDoubleClick={(e) => startEditSection(sec, e)}
+                      className={`group py-2 px-2 rounded-lg cursor-pointer flex items-center justify-between transition border-l-3 select-none ${indentClass} ${
+                        isActive
+                          ? 'bg-indigo-50 border-indigo-600 text-indigo-900 font-semibold shadow-2xs'
+                          : 'border-transparent text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isEditingThis ? (
+                        <div
+                          className="flex items-center gap-1.5 w-full"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditSection}
-                          className="p-1 text-slate-400 hover:bg-slate-100 rounded"
-                          title="취소 (Esc)"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2 truncate pr-2">
-                          {isRoot ? (
-                            <BookOpen className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                          ) : sec.level <= 2 ? (
-                            <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          ) : (
-                            <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                          <span
-                            className={`truncate ${isRoot ? 'font-bold text-slate-900' : ''}`}
-                            title={sec.title}
-                          >
-                            {sec.title}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Hover inline edit trigger */}
+                          <input
+                            type="text"
+                            value={editingSectionTitle}
+                            onChange={(e) => setEditingSectionTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveEditSection(sec.id);
+                              if (e.key === 'Escape') cancelEditSection();
+                            }}
+                            autoFocus
+                            className="flex-1 text-xs bg-white border border-indigo-500 rounded px-2 py-1 font-semibold focus:outline-hidden ring-1 ring-indigo-500 text-slate-900"
+                          />
                           <button
                             type="button"
-                            onClick={(e) => startEditSection(sec, e)}
-                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition p-0.5 rounded hover:bg-slate-200/50 cursor-pointer"
-                            title="섹션 제목 수정"
+                            onClick={() => saveEditSection(sec.id)}
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                            title="저장 (Enter)"
                           >
-                            <Edit2 className="w-3 h-3" />
+                            <Check className="w-3.5 h-3.5" />
                           </button>
-
-                          {/* Delete section trigger */}
-                          {onDeleteSection && (() => {
-                            const childSecs = childSectionsMap.get(sec.id) || [];
-                            const isLeafEmpty = sec.child_chunk_ids.length === 0 && childSecs.length === 0;
-                            const hasChildSecs = childSecs.length > 0;
-
-                            return (
+                          <button
+                            type="button"
+                            onClick={cancelEditSection}
+                            className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                            title="취소 (Esc)"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5 truncate pr-1.5 min-w-0">
+                            {/* Accordion Expand/Collapse Button */}
+                            {hasChildren ? (
                               <button
                                 type="button"
-                                onClick={(e) => handleDeleteSectionClick(sec, e)}
-                                className={`transition p-0.5 rounded hover:bg-rose-50 cursor-pointer ${
-                                  isLeafEmpty
-                                    ? 'opacity-80 text-amber-500 hover:text-rose-600'
-                                    : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600'
-                                }`}
-                                title={
-                                  isLeafEmpty
-                                    ? '빈 섹션 삭제'
-                                    : hasChildSecs
-                                    ? `섹션(하위 섹션 ${childSecs.length}개 포함) 삭제`
-                                    : `섹션 및 소속 청크(${sec.child_chunk_ids.length}개) 삭제`
-                                }
+                                onClick={(e) => toggleExpandSection(sec.id, e)}
+                                className="p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-200/60 transition cursor-pointer shrink-0"
+                                title={isExpanded ? '하위 청크 접기' : '하위 청크 펼치기'}
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            );
-                          })()}
-
-                          {/* 1열: Parent and Child count dual badges */}
-                          {(() => {
-                            const pCount =
-                              sec.parent_chunk_ids && sec.parent_chunk_ids.length > 0
-                                ? sec.parent_chunk_ids.length
-                                : (parentChunks || []).filter((p) => p.section_id === sec.id).length;
-                            const cCount =
-                              sec.child_chunk_ids && sec.child_chunk_ids.length > 0
-                                ? sec.child_chunk_ids.length
-                                : childChunks.filter((c) => c.section_id === sec.id || c.parent_id === sec.id).length;
-                            const childSecs = childSectionsMap.get(sec.id) || [];
-                            const isLeafEmpty = pCount === 0 && cCount === 0 && childSecs.length === 0;
-
-                            return (
-                              <div className="flex items-center gap-1 font-mono text-[10px]">
-                                {isLeafEmpty ? (
-                                  <span
-                                    className="bg-amber-100 text-amber-800 font-semibold border border-amber-200 px-1.5 py-0.5 rounded"
-                                    title="청크와 하위 섹션이 없는 빈 섹션"
-                                  >
-                                    빈 섹션
-                                  </span>
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
                                 ) : (
-                                  <>
-                                    <span
-                                      className={`px-1.5 py-0.5 rounded font-semibold ${
-                                        isActive
-                                          ? 'bg-indigo-200 text-indigo-950 font-bold'
-                                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200/70'
-                                      }`}
-                                      title={`소속 Parent 청크: ${pCount}개`}
-                                    >
-                                      P {pCount}
-                                    </span>
-                                    <span
-                                      className={`px-1.5 py-0.5 rounded ${
-                                        isActive
-                                          ? 'bg-indigo-300/70 text-indigo-950 font-bold'
-                                          : 'bg-slate-100 text-slate-600'
-                                      }`}
-                                      title={`소속 Child 청크: ${cCount}개`}
-                                    >
-                                      C {cCount}
-                                    </span>
-                                  </>
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                                 )}
+                              </button>
+                            ) : (
+                              <span className="w-3.5 h-3.5 inline-block shrink-0" />
+                            )}
+
+                            {isRoot ? (
+                              <BookOpen className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            ) : sec.level <= 2 ? (
+                              <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            ) : (
+                              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            )}
+                            <span
+                              className={`truncate ${isRoot ? 'font-bold text-slate-900' : ''}`}
+                              title={sec.title}
+                            >
+                              {sec.title}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Hover inline edit trigger */}
+                            <button
+                              type="button"
+                              onClick={(e) => startEditSection(sec, e)}
+                              className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition p-0.5 rounded hover:bg-slate-200/50 cursor-pointer"
+                              title="섹션 제목 수정"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+
+                            {/* Delete section trigger */}
+                            {onDeleteSection && (() => {
+                              const childSecs = childSectionsMap.get(sec.id) || [];
+                              const isLeafEmpty = sec.child_chunk_ids.length === 0 && childSecs.length === 0;
+                              const hasChildSecs = childSecs.length > 0;
+
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteSectionClick(sec, e)}
+                                  className={`transition p-0.5 rounded hover:bg-rose-50 cursor-pointer ${
+                                    isLeafEmpty
+                                      ? 'opacity-80 text-amber-500 hover:text-rose-600'
+                                      : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600'
+                                  }`}
+                                  title={
+                                    isLeafEmpty
+                                      ? '빈 섹션 삭제'
+                                      : hasChildSecs
+                                      ? `섹션(하위 섹션 ${childSecs.length}개 포함) 삭제`
+                                      : `섹션 및 소속 청크(${sec.child_chunk_ids.length}개) 삭제`
+                                  }
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              );
+                            })()}
+
+                            {/* 1열: Parent and Child count dual badges */}
+                            {(() => {
+                              const pCount =
+                                sec.parent_chunk_ids && sec.parent_chunk_ids.length > 0
+                                  ? sec.parent_chunk_ids.length
+                                  : (parentChunks || []).filter((p) => p.section_id === sec.id).length;
+                              const cCount =
+                                sec.child_chunk_ids && sec.child_chunk_ids.length > 0
+                                  ? sec.child_chunk_ids.length
+                                  : childChunks.filter((c) => c.section_id === sec.id || c.parent_id === sec.id).length;
+                              const childSecs = childSectionsMap.get(sec.id) || [];
+                              const isLeafEmpty = pCount === 0 && cCount === 0 && childSecs.length === 0;
+
+                              return (
+                                <div className="flex items-center gap-1 font-mono text-[10px]">
+                                  {isLeafEmpty ? (
+                                    <span
+                                      className="bg-amber-100 text-amber-800 font-semibold border border-amber-200 px-1.5 py-0.5 rounded"
+                                      title="청크와 하위 섹션이 없는 빈 섹션"
+                                    >
+                                      빈 섹션
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded font-semibold ${
+                                          isActive
+                                            ? 'bg-indigo-200 text-indigo-950 font-bold'
+                                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200/70'
+                                        }`}
+                                        title={`소속 Parent 청크: ${pCount}개`}
+                                      >
+                                        P {pCount}
+                                      </span>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded ${
+                                          isActive
+                                            ? 'bg-indigo-300/70 text-indigo-950 font-bold'
+                                            : 'bg-slate-100 text-slate-600'
+                                        }`}
+                                        title={`소속 Child 청크: ${cCount}개`}
+                                      >
+                                        C {cCount}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Expanded Sub-Tree: Lowest Level (Child Chunks) */}
+                    {isExpanded && hasChildren && (
+                      <div
+                        className={`border-l-2 border-indigo-200/70 space-y-0.5 my-1 transition-all ${
+                          sec.level === 0
+                            ? 'ml-5 pl-2'
+                            : sec.level === 1
+                            ? 'ml-7 pl-2'
+                            : sec.level === 2
+                            ? 'ml-9 pl-2'
+                            : 'ml-11 pl-2'
+                        }`}
+                      >
+                        {sectionChildren.map((chunk) => {
+                          const isChildSelected = activeChunkId === chunk.chunk_id;
+                          const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
+                          const isArticle = chunk.chunk_type === 'article' || chunk.chunk_type === 'article_clause';
+                          const isIgnored = Boolean(chunk.is_ignored);
+                          const isEdited = Boolean(chunk.is_edited);
+                          const pageNum = chunk.page_number || 1;
+
+                          // Extract preview text
+                          let preview = '';
+                          if (chunk.table_caption) {
+                            preview = `[표] ${chunk.table_caption}`;
+                          } else if (chunk.text) {
+                            const firstLine = chunk.text.trim().split('\n')[0] || '';
+                            preview = firstLine.length > 28 ? firstLine.slice(0, 28) + '…' : firstLine;
+                          } else if (chunk.raw_html) {
+                            preview = '[HTML 표/데이터]';
+                          } else {
+                            preview = '(내용 없음)';
+                          }
+
+                          const shortId = chunk.chunk_id.includes('_')
+                            ? chunk.chunk_id.split('_').pop()
+                            : chunk.chunk_id;
+
+                          return (
+                            <div
+                              key={chunk.chunk_id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectChildChunkFromTree(sec.id, chunk.chunk_id);
+                              }}
+                              className={`group/child py-1 px-2 rounded-md cursor-pointer flex items-center justify-between text-[11px] transition select-none ${
+                                isChildSelected
+                                  ? 'bg-indigo-600 text-white font-medium shadow-2xs ring-1 ring-indigo-500'
+                                  : isIgnored
+                                  ? 'text-slate-400 bg-slate-50/60 hover:bg-slate-100 opacity-60'
+                                  : 'text-slate-600 hover:bg-indigo-50/80 hover:text-slate-900'
+                              }`}
+                              title={`${chunk.chunk_id} (p.${pageNum})\n${chunk.text?.slice(0, 200) || ''}`}
+                            >
+                              <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
+                                {isTable ? (
+                                  <Table2
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      isChildSelected ? 'text-amber-200' : 'text-amber-500'
+                                    }`}
+                                  />
+                                ) : isArticle ? (
+                                  <Scale
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      isChildSelected ? 'text-indigo-200' : 'text-indigo-500'
+                                    }`}
+                                  />
+                                ) : (
+                                  <AlignLeft
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      isChildSelected ? 'text-indigo-200' : 'text-slate-400'
+                                    }`}
+                                  />
+                                )}
+                                <span
+                                  className={`font-mono text-[9px] px-1 py-0.2 rounded shrink-0 ${
+                                    isChildSelected
+                                      ? 'bg-indigo-700/90 text-indigo-100 font-semibold'
+                                      : 'bg-slate-100 text-slate-500'
+                                  }`}
+                                >
+                                  p.{pageNum}
+                                </span>
+                                <span className="truncate text-xs">
+                                  {preview}
+                                </span>
                               </div>
-                            );
-                          })()}
-                        </div>
-                      </>
+
+                              <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
+                                {isEdited && (
+                                  <span
+                                    className={`px-1 py-0.2 rounded font-semibold ${
+                                      isChildSelected
+                                        ? 'bg-indigo-700 text-emerald-300'
+                                        : 'bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    수정
+                                  </span>
+                                )}
+                                {isIgnored && (
+                                  <span
+                                    className={`px-1 py-0.2 rounded ${
+                                      isChildSelected
+                                        ? 'bg-indigo-700 text-rose-300'
+                                        : 'bg-rose-50 text-rose-600'
+                                    }`}
+                                  >
+                                    제외
+                                  </span>
+                                )}
+                                <span
+                                  className={`text-[10px] ${
+                                    isChildSelected ? 'text-indigo-200 font-bold' : 'text-slate-400'
+                                  }`}
+                                >
+                                  {shortId}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 );
@@ -1155,6 +1398,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         return (
                           <div
                             key={chunk.chunk_id}
+                            id={`chunk-card-${chunk.chunk_id}`}
                             onClick={() => setSelectedChunkId(chunk.chunk_id)}
                             className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
                               isChecked
