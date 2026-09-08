@@ -366,6 +366,15 @@ class HierarchicalChunker:
                         },
                         "bbox": item.get("bbox", [])
                     }
+                elif b_type in ["index", "list"]:
+                    list_text = item.get("text", "")
+                    if not list_text and "list_items" in item:
+                        list_text = "\n".join(str(it) for it in item["list_items"] if str(it).strip())
+                    block = {
+                        "type": b_type,
+                        "content": {"list_items": item.get("list_items", []), "text": list_text},
+                        "bbox": item.get("bbox", [])
+                    }
                 else:
                     block = {
                         "type": b_type,
@@ -455,13 +464,18 @@ class HierarchicalChunker:
                             "breadcrumbs": current_breadcrumbs,
                         })
 
-                elif b_type in ["paragraph", "text"]:
-                    para_text = self._extract_text_from_content(b_content.get("paragraph_content", []))
-                    if not para_text.strip():
-                        if isinstance(b_content, str):
-                            para_text = b_content
-                        elif isinstance(b_content.get("content"), str):
-                            para_text = b_content.get("content")
+                elif b_type in ["paragraph", "text", "index", "list", "equation", "equation_interline"]:
+                    if b_type in ["index", "list"]:
+                        para_text = self._extract_text_from_list_block(b_content, block)
+                    elif b_type in ["equation", "equation_interline"]:
+                        para_text = b_content.get("math_content", "") or b_content.get("text", "") or block.get("text", "")
+                    else:
+                        para_text = self._extract_text_from_content(b_content.get("paragraph_content", []))
+                        if not para_text.strip():
+                            if isinstance(b_content, str):
+                                para_text = b_content
+                            elif isinstance(b_content.get("content"), str):
+                                para_text = b_content.get("content")
                     if not para_text.strip():
                         continue
 
@@ -583,7 +597,7 @@ class HierarchicalChunker:
                 b_type = block.get("type", "").lower()
                 b_content = block.get("content", {})
 
-                if self.filter_headers_footers and b_type in ["page_header", "page_footer", "header", "footer"]:
+                if self.filter_headers_footers and b_type in ["page_header", "page_footer", "header", "footer", "page_number"]:
                     continue
 
                 if b_type == "title":
@@ -595,6 +609,10 @@ class HierarchicalChunker:
                             raw_text = b_content
                         elif isinstance(b_content.get("content"), str):
                             raw_text = b_content.get("content")
+                elif b_type in ["index", "list"]:
+                    raw_text = self._extract_text_from_list_block(b_content, block)
+                elif b_type in ["equation", "equation_interline"]:
+                    raw_text = b_content.get("math_content", "") or b_content.get("text", "") or block.get("text", "")
                 elif b_type == "table":
                     raw_text = ""
                 else:
@@ -1311,3 +1329,36 @@ class HierarchicalChunker:
             elif isinstance(item, str):
                 parts.append(item)
         return " ".join(parts).strip()
+
+    def _extract_text_from_list_block(self, b_content: Any, block: Optional[Dict[str, Any]] = None) -> str:
+        """index 또는 list 블록에서 텍스트 항목들을 추출하여 줄바꿈으로 연결"""
+        list_items = []
+        if isinstance(b_content, dict):
+            list_items = b_content.get("list_items", [])
+        if not list_items and isinstance(block, dict):
+            list_items = block.get("list_items", [])
+
+        if not list_items:
+            if isinstance(b_content, str):
+                return b_content
+            if isinstance(b_content, dict):
+                return str(b_content.get("text", "") or b_content.get("content", ""))
+            return ""
+
+        lines: List[str] = []
+        for item in list_items:
+            if isinstance(item, str):
+                if item.strip():
+                    lines.append(item.strip())
+            elif isinstance(item, dict):
+                item_content = item.get("item_content")
+                if item_content:
+                    extracted = self._extract_text_from_content(item_content)
+                    if extracted:
+                        lines.append(extracted)
+                else:
+                    txt = str(item.get("content", "") or item.get("text", "")).strip()
+                    if txt:
+                        lines.append(txt)
+        return "\n".join(lines).strip()
+

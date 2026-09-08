@@ -552,6 +552,52 @@ class TestHierarchicalChunker(unittest.TestCase):
             reindexed["parent_chunks"][1]["parent_chunk_id"],
         ])
 
+    def test_index_and_list_blocks_preserved(self):
+        """MinerU의 index 및 list 블록이 누락되지 않고 청크에 온전히 포함되는지 검증"""
+        content_list_v2 = [
+            [
+                {
+                    "type": "paragraph",
+                    "content": {
+                        "paragraph_content": [{"type": "text", "content": "제38조(업무상질병판정위원회)① 제37조제1항제2호에 따른 업무상 질병의 인정 여부를 심의하기 위하여 공단 소속기관에 업무상질병판정위원회(이하\"판정위원회\"라 한다)를 둔다."}]
+                    },
+                    "bbox": [52, 138, 931, 174]
+                },
+                {
+                    "type": "index",
+                    "content": {
+                        "list_type": "text_list",
+                        "list_items": [
+                            {"item_type": "text", "item_content": [{"type": "text", "content": "2판정위원회의 심의에서 제외되는 질병과 판정위원회의 심의 절차는 고용노동부령으로 정한다.<개정 2010.6."}]},
+                            {"item_type": "text", "item_content": [{"type": "text", "content": "4.>"}]}
+                        ]
+                    },
+                    "bbox": [75, 176, 954, 211]
+                },
+                {
+                    "type": "paragraph",
+                    "content": {
+                        "paragraph_content": [{"type": "text", "content": "3판정위원회의 구성과 운영에 필요한 사항은 고용노동부령으로 정한다.<개정 2010.6.4.>"}]
+                    },
+                    "bbox": [77, 214, 776, 232]
+                }
+            ]
+        ]
+
+        chunker = HierarchicalChunker(doc_id="test_index_doc")
+        res = chunker.chunk_content_list(content_list_v2, doc_title="산업재해보상보험법", strategy="legal")
+
+        # 제38조 2항 텍스트가 child_chunks 중 하나에 포함되어 있어야 함
+        all_child_texts = " ".join(c["text"] for c in res["child_chunks"])
+        self.assertIn("판정위원회의 심의에서 제외되는 질병", all_child_texts)
+        self.assertIn("4.>", all_child_texts)
+        self.assertIn("3판정위원회의 구성과 운영", all_child_texts)
+
+        # general 전략에서도 테스트
+        res_gen = chunker.chunk_content_list(content_list_v2, doc_title="일반문서", strategy="general")
+        all_gen_texts = " ".join(c["text"] for c in res_gen["child_chunks"])
+        self.assertIn("판정위원회의 심의에서 제외되는 질병", all_gen_texts)
+
 
 if __name__ == "__main__":
     unittest.main()
