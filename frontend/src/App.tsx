@@ -2,11 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { SidebarNav } from './components/SidebarNav';
 import type { ActiveTab } from './components/SidebarNav';
+import { DashboardOverview } from './components/DashboardOverview';
 import { ChunkStudio } from './components/ChunkStudio';
-import { ControllerBar } from './components/ControllerBar';
-import { StatCards } from './components/StatCards';
-import { HierarchyTree } from './components/HierarchyTree';
-import { ChunkExplorer } from './components/ChunkExplorer';
 import { JsonlModal } from './components/JsonlModal';
 import { ChunkEditModal } from './components/ChunkEditModal';
 import { QdrantConfigModal } from './components/QdrantConfigModal';
@@ -37,6 +34,7 @@ import {
 import { syncChunkPageMetadata } from './utils/pageUtils';
 import type {
   PdfItem,
+  GlobalStats,
   HierarchicalEtlResult,
   ChildChunk,
   ParentChunk,
@@ -70,12 +68,13 @@ function normalizeEtlData(data: any): HierarchicalEtlResult {
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [pdfList, setPdfList] = useState<PdfItem[]>([]);
+  const [globalStats, setGlobalStats] = useState<GlobalStats | undefined>(undefined);
   const [selectedPdf, setSelectedPdf] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
 
   const [engine, setEngine] = useState('pipeline');
-  const [method, setMethod] = useState('auto');
-  const [formula, setFormula] = useState(true);
+  const method = 'auto';
+  const formula = true;
   const [strategy, setStrategy] = useState<string>('general');
   const [allPages, setAllPages] = useState(true);
   const [startPage, setStartPage] = useState(0);
@@ -94,6 +93,7 @@ export function App() {
 
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedParentChunkId, setSelectedParentChunkId] = useState<string | null>(null);
+  void selectedParentChunkId;
   const [activeModalChunk, setActiveModalChunk] = useState<ChildChunk | null>(null);
 
   // Toast notification state
@@ -198,6 +198,9 @@ export function App() {
     try {
       const data = await getPdfList();
       setPdfList(data.pdfs || []);
+      if (data.global_stats) {
+        setGlobalStats(data.global_stats);
+      }
       if (data.current) {
         setSelectedPdf(data.current);
         if (isLegalDoc(data.current)) {
@@ -293,10 +296,12 @@ export function App() {
               `🎉 백그라운드 ETL 완료! (소요: ${job.elapsed_time || 0}초, 청크: ${job.result.stats.total_child_chunks}개)`
             );
           }
+          await fetchPdfs();
           clearInterval(intervalId);
         } else if (job.status === 'failed') {
           setIsParsing(false);
           showToast(`❌ 태스크 실패: ${job.error || '파싱 중 오류 발생'}`, true);
+          await fetchPdfs();
           clearInterval(intervalId);
         }
       } catch (err: any) {
@@ -305,7 +310,7 @@ export function App() {
     }, 2000);
 
     return () => clearInterval(intervalId);
-  }, [activeJob?.task_id, activeJob?.status]);
+  }, [activeJob?.task_id, activeJob?.status, fetchPdfs]);
 
   // 2. Select PDF Handler
   const handleSelectPdf = async (filename: string) => {
@@ -319,9 +324,21 @@ export function App() {
     }
     try {
       await selectPdf(filename);
+      await fetchSample();
     } catch (err: any) {
       console.error(err);
       showToast(err.message, true);
+    }
+  };
+
+  // Select PDF and Switch directly to Chunk Studio
+  const handleSelectAndOpenStudio = async (filename: string) => {
+    try {
+      await handleSelectPdf(filename);
+      setActiveTab('studio');
+    } catch (err: any) {
+      console.error(err);
+      setActiveTab('studio');
     }
   };
 
@@ -332,11 +349,7 @@ export function App() {
       const res = await uploadPdf(file);
       showToast(`PDF 업로드 성공: ${res.filename} (${res.total_pages}p)`);
       await fetchPdfs();
-      setSelectedPdf(res.filename);
-      if (isLegalDoc(res.filename)) {
-        setStrategy('legal');
-      }
-      setEndPage(Math.max(0, res.total_pages - 1));
+      await handleSelectPdf(res.filename);
     } catch (err: any) {
       showToast(err.message || '업로드 실패', true);
     } finally {
@@ -344,17 +357,26 @@ export function App() {
     }
   };
 
+  const handleDropUploadPdf = async (file: File) => {
+    await handleUploadPdf(file);
+  };
+
   // 4. Run ETL Pipeline via Asynchronous Background Task
-  const handleRunEtl = async () => {
-    if (!selectedPdf) {
+  const handleRunEtl = async (targetFilename?: string) => {
+    const docToParse = targetFilename || selectedPdf;
+    if (!docToParse) {
       showToast('파싱할 PDF 문서를 선택해주세요.', true);
       return;
+    }
+
+    if (docToParse !== selectedPdf) {
+      await handleSelectPdf(docToParse);
     }
 
     setIsParsing(true);
     try {
       const res = await startEtlJob({
-        filename: selectedPdf,
+        filename: docToParse,
         all_pages: allPages,
         start_page: allPages ? null : startPage,
         end_page: allPages ? null : endPage,
@@ -370,13 +392,15 @@ export function App() {
         status: 'running',
         progress_msg: '백그라운드 파싱 대기열 등록됨...',
         elapsed_time: 0,
-        filename: selectedPdf,
+        filename: docToParse,
       });
 
-      showToast(`🚀 백그라운드 태스크 등록 완료! (ID: ${res.task_id})`);
+      showToast(`[${docToParse}] 백그라운드 ETL 작업 등록됨 (ID: ${res.task_id})`);
+      fetchPdfs();
     } catch (err: any) {
+      console.error(err);
       setIsParsing(false);
-      showToast(err.message || '태스크 등록 실패', true);
+      showToast(err.message || 'ETL 파싱 실행 실패', true);
     }
   };
 
@@ -1911,87 +1935,36 @@ export function App() {
         />
 
         {activeTab === 'dashboard' ? (
-          /* Dashboard Mode: Scrollable Overview & Parser */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-            <div className="max-w-7xl mx-auto space-y-6">
-              {/* PDF Controller Bar */}
-              <ControllerBar
-                pdfList={pdfList}
-                selectedPdf={selectedPdf}
-                onSelectPdf={handleSelectPdf}
-                onUploadPdf={handleUploadPdf}
-                isUploading={isUploading}
-                engine={engine}
-                setEngine={setEngine}
-                method={method}
-                setMethod={setMethod}
-                formula={formula}
-                setFormula={setFormula}
-                strategy={strategy}
-                setStrategy={setStrategy}
-                allPages={allPages}
-                setAllPages={setAllPages}
-                startPage={startPage}
-                setStartPage={setStartPage}
-                endPage={endPage}
-                setEndPage={setEndPage}
-                onRunEtl={handleRunEtl}
-                isParsing={isParsing}
-                activeJob={activeJob}
-              />
-
-              {/* Statistics Scoreboard */}
-              <StatCards stats={etlData?.stats} />
-
-              {/* Hierarchy Tree + Chunk Explorer Workspace */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Left: Heading Hierarchy Tree */}
-                <div className="lg:col-span-4">
-                  <HierarchyTree
-                    sections={etlData?.sections || etlData?.parent_sections || []}
-                    parentChunks={etlData?.parent_chunks || []}
-                    selectedSectionId={selectedSectionId}
-                    selectedParentChunkId={selectedParentChunkId}
-                    onSelectSection={(id) => {
-                      setSelectedSectionId(id);
-                      setSelectedParentChunkId(null);
-                    }}
-                    onSelectParentChunk={(parentId, sectionId) => {
-                      setSelectedParentChunkId(parentId);
-                      if (sectionId) {
-                        setSelectedSectionId(sectionId);
-                      }
-                    }}
-                    isLoading={isLoadingEtl}
-                  />
-                </div>
-
-                {/* Right: Chunk Viewer & Inspector */}
-                <div className="lg:col-span-8">
-                  <ChunkExplorer
-                    chunks={etlData?.child_chunks || []}
-                    parentSections={etlData?.sections || etlData?.parent_sections || []}
-                    parentChunks={etlData?.parent_chunks || []}
-                    selectedSectionId={selectedSectionId}
-                    selectedParentChunkId={selectedParentChunkId}
-                    onClearSectionFilter={() => {
-                      setSelectedSectionId(null);
-                      setSelectedParentChunkId(null);
-                    }}
-                    onClearParentFilter={() => setSelectedParentChunkId(null)}
-                    onOpenJsonlModal={setActiveModalChunk}
-                    onEditChunk={setEditingChunk}
-                    onDeleteChunk={(id) => handleDeleteChunks([id])}
-                    onRefineChunk={(chunk) => {
-                      setEditingChunk(chunk);
-                      setAutoRefineChunk(true);
-                    }}
-                    isLoading={isLoadingEtl}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          /* Dashboard Mode: Multi-Document ETL & RAG Pipeline Status Board */
+          <DashboardOverview
+            pdfList={pdfList}
+            globalStats={globalStats}
+            selectedPdf={selectedPdf}
+            onSelectPdf={handleSelectPdf}
+            onSelectAndOpenStudio={handleSelectAndOpenStudio}
+            onUploadPdf={async (e) => {
+              if (e.target.files && e.target.files[0]) {
+                await handleUploadPdf(e.target.files[0]);
+              }
+            }}
+            onDropUploadPdf={handleDropUploadPdf}
+            isUploading={isUploading}
+            onRunEtl={handleRunEtl}
+            isParsing={isParsing}
+            activeJob={activeJob}
+            onRefreshList={fetchPdfs}
+            onOpenQdrantModal={() => setIsQdrantConfigOpen(true)}
+            engine={engine}
+            setEngine={setEngine}
+            strategy={strategy}
+            setStrategy={setStrategy}
+            allPages={allPages}
+            setAllPages={setAllPages}
+            startPage={startPage}
+            setStartPage={setStartPage}
+            endPage={endPage}
+            setEndPage={setEndPage}
+          />
         ) : activeTab === 'studio' ? (
           /* Chunk Studio Mode: 3-Column Focus IDE Workspace */
           <div className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col min-h-0">

@@ -64,12 +64,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
-          title="대시보드 (PDF 선택 & 파싱)"
+          title="대시보드 (문서 ETL 파이프라인 현황)"
         >
           <LayoutDashboard className="w-4 h-4 shrink-0" />
           <div className="hidden sm:flex flex-1 items-center justify-between">
             <span>대시보드</span>
-            <span className="text-[10px] opacity-70 font-normal">개요/파싱</span>
+            <span className="text-[10px] opacity-70 font-normal">파이프라인</span>
           </div>
         </button>
 

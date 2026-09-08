@@ -1,6 +1,6 @@
-import type { EtlResult, PdfItem, ParseRequestParams } from '../types';
+import type { EtlResult, PdfListResponse, ParseRequestParams } from '../types';
 
-export async function getPdfList(): Promise<{ pdfs: PdfItem[]; current: string | null }> {
+export async function getPdfList(): Promise<PdfListResponse> {
   const res = await fetch('/api/pdf/list');
   if (!res.ok) {
     throw new Error('PDF 목록을 불러오지 못했습니다.');

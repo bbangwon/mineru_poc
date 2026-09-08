@@ -1,9 +1,44 @@
+export interface PdfItemStats {
+  total_chunks: number;
+  parent_sections: number;
+  parent_chunks: number;
+  tables_count: number;
+  estimated_tokens: number;
+}
+
 export interface PdfItem {
   filename: string;
   size_bytes: number;
   total_pages: number;
   is_current: boolean;
+  mtime?: number;
+  etl_status?: 'not_started' | 'running' | 'completed' | 'failed';
+  has_saved_edit?: boolean;
+  is_embedded?: boolean;
+  active_job?: {
+    task_id: string;
+    status: string;
+    progress_msg?: string;
+    elapsed_time?: number;
+  } | null;
+  stats?: PdfItemStats | null;
+  last_modified?: string | null;
 }
+
+export interface GlobalStats {
+  total_pdfs: number;
+  parsed_pdfs: number;
+  running_jobs: number;
+  total_chunks: number;
+  embedded_pdfs: number;
+}
+
+export interface PdfListResponse {
+  pdfs: PdfItem[];
+  current: string | null;
+  global_stats?: GlobalStats;
+}
+
 
 // 1. Section (목차 노드 / 거시 계층)
 export interface SectionNode {

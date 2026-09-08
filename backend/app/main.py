@@ -226,9 +226,43 @@ def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Option
         return None
 
 
+_doc_stats_cache: Dict[str, tuple[float, dict]] = {}
+_embedded_cache_mtime: float = 0
+_embedded_doc_names: set[str] = set()
+
+
+def get_embedded_doc_names() -> set[str]:
+    """Qdrant 또는 rag_chunks_embedded.json에 인덱싱된 문서 이름/ID 집합 반환"""
+    global _embedded_cache_mtime, _embedded_doc_names
+    if not EMBEDDED_JSON_PATH.exists():
+        return set()
+    try:
+        current_mtime = EMBEDDED_JSON_PATH.stat().st_mtime
+        if current_mtime == _embedded_cache_mtime:
+            return _embedded_doc_names
+
+        with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            found_names = set()
+            for chunk in data.get("chunks", []):
+                payload = chunk.get("payload", {})
+                bc = payload.get("breadcrumbs", [])
+                if bc and isinstance(bc, list) and len(bc) > 0:
+                    found_names.add(str(bc[0]).strip())
+                doc_id = payload.get("doc_id")
+                if doc_id:
+                    found_names.add(str(doc_id).strip())
+            _embedded_cache_mtime = current_mtime
+            _embedded_doc_names = found_names
+            return found_names
+    except Exception as e:
+        print(f"Failed to read embedded doc names: {e}")
+        return set()
+
+
 @app.get("/api/pdf/list")
 async def list_pdfs():
-    """사용 가능한 모든 PDF 파일 목록과 페이지 수 반환"""
+    """사용 가능한 모든 PDF 파일 목록과 상세 ETL/인덱싱 상태 및 통계 반환"""
     global current_selected_pdf_name
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     pdf_files = list(DOCS_DIR.glob("*.pdf"))
@@ -241,19 +275,153 @@ async def list_pdfs():
     if not current_selected_pdf_name and pdf_files:
         current_selected_pdf_name = pdf_files[0].name
 
+    embedded_names = get_embedded_doc_names()
+
     items = []
+    total_parsed_count = 0
+    total_chunks_count = 0
+    total_running_jobs = 0
+    total_embedded_count = 0
+
     for p in pdf_files:
         pages = get_pdf_page_count(p)
+        stem = p.stem
+        size_bytes = p.stat().st_size
+        mtime = p.stat().st_mtime
+
+        # 1. 실행 중인 Job 검사
+        running_job = None
+        for j in jobs_db.values():
+            if j.get("filename") == p.name and j.get("status") in ["pending", "running"]:
+                running_job = j
+                break
+
+        if running_job:
+            etl_status = "running"
+            total_running_jobs += 1
+            active_job_info = {
+                "task_id": running_job.get("task_id"),
+                "status": running_job.get("status"),
+                "progress_msg": running_job.get("progress_msg"),
+                "elapsed_time": round(time.time() - running_job.get("created_at", time.time()), 1),
+            }
+        else:
+            active_job_info = None
+            etl_status = "not_started"
+
+        stats_info = None
+        has_saved_edit = False
+        last_modified = None
+
+        # 2. 산출물 존재 여부 및 stats 탐색
+        content_info = find_latest_content_list(stem)
+        if content_info:
+            c_path, _ = content_info
+            p_dir = c_path.parent
+            edited_path = p_dir / "rag_chunks_edited.json"
+
+            if edited_path.exists():
+                if etl_status != "running":
+                    etl_status = "completed"
+                has_saved_edit = True
+                last_modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(edited_path.stat().st_mtime))
+                e_mtime = edited_path.stat().st_mtime
+                cached = _doc_stats_cache.get(str(edited_path))
+                if cached and cached[0] == e_mtime:
+                    stats_info = cached[1]
+                else:
+                    try:
+                        with open(edited_path, "r", encoding="utf-8") as f:
+                            ed_data = json.load(f)
+                            childs = ed_data.get("child_chunks", [])
+                            parents = ed_data.get("parent_chunks", [])
+                            secs = ed_data.get("sections", ed_data.get("parent_sections", []))
+                            stats_info = {
+                                "total_chunks": len(childs),
+                                "parent_sections": len(secs),
+                                "parent_chunks": len(parents),
+                                "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
+                                "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
+                            }
+                            _doc_stats_cache[str(edited_path)] = (e_mtime, stats_info)
+                    except Exception:
+                        pass
+            elif c_path.exists():
+                if etl_status != "running":
+                    etl_status = "completed"
+                has_saved_edit = False
+                last_modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(c_path.stat().st_mtime))
+                if latest_etl_result and (latest_etl_result.get("active_pdf") == p.name or stem in latest_etl_result.get("doc_title", "")):
+                    childs = latest_etl_result.get("child_chunks", [])
+                    stats_info = {
+                        "total_chunks": len(childs),
+                        "parent_sections": len(latest_etl_result.get("sections", [])),
+                        "parent_chunks": len(latest_etl_result.get("parent_chunks", [])),
+                        "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
+                        "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
+                    }
+
+        if etl_status == "completed" and stats_info is None and content_info:
+            c_path, _ = content_info
+            try:
+                c_mtime = c_path.stat().st_mtime
+                cached = _doc_stats_cache.get(str(c_path))
+                if cached and cached[0] == c_mtime:
+                    stats_info = cached[1]
+                else:
+                    chunker = HierarchicalChunker(doc_id=stem)
+                    with open(c_path, "r", encoding="utf-8") as f:
+                        c_data = json.load(f)
+                    temp_res = chunker.chunk_content_list(c_data, doc_title=stem)
+                    childs = temp_res.get("child_chunks", [])
+                    parents = temp_res.get("parent_chunks", [])
+                    secs = temp_res.get("sections", [])
+                    stats_info = {
+                        "total_chunks": len(childs),
+                        "parent_sections": len(secs),
+                        "parent_chunks": len(parents),
+                        "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
+                        "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
+                    }
+                    _doc_stats_cache[str(c_path)] = (c_mtime, stats_info)
+            except Exception as e:
+                print(f"Failed to auto-compute chunk stats for {stem}: {e}")
+
+        if etl_status == "completed":
+            total_parsed_count += 1
+            if stats_info:
+                total_chunks_count += stats_info.get("total_chunks", 0)
+
+        # 3. 임베딩 여부 확인
+        is_embedded = (stem in embedded_names) or (p.name in embedded_names)
+        if is_embedded:
+            total_embedded_count += 1
+
         items.append(
             {
                 "filename": p.name,
-                "size_bytes": p.stat().st_size,
+                "size_bytes": size_bytes,
                 "total_pages": pages,
                 "is_current": (p.name == current_selected_pdf_name),
+                "mtime": mtime,
+                "etl_status": etl_status,
+                "has_saved_edit": has_saved_edit,
+                "is_embedded": is_embedded,
+                "active_job": active_job_info,
+                "stats": stats_info,
+                "last_modified": last_modified,
             }
         )
 
-    return {"pdfs": items, "current": current_selected_pdf_name}
+    global_stats = {
+        "total_pdfs": len(pdf_files),
+        "parsed_pdfs": total_parsed_count,
+        "running_jobs": total_running_jobs,
+        "total_chunks": total_chunks_count,
+        "embedded_pdfs": total_embedded_count,
+    }
+
+    return {"pdfs": items, "current": current_selected_pdf_name, "global_stats": global_stats}
 
 
 @app.post("/api/pdf/select")
