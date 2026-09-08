@@ -256,6 +256,35 @@ class QdrantManager:
 
         return results
 
+    def delete_by_doc_id(
+        self,
+        doc_name: str,
+        collection_name: Optional[str] = None,
+    ) -> bool:
+        """특정 doc_id 또는 doc_title을 가진 포인트를 컬렉션에서 삭제합니다."""
+        client = self.get_client()
+        col_name = collection_name or self.config.collection_name
+        try:
+            if not client.collection_exists(col_name):
+                return False
+
+            client.delete(
+                collection_name=col_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        should=[
+                            models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_name)),
+                            models.FieldCondition(key="doc_title", match=models.MatchValue(value=doc_name)),
+                        ]
+                    )
+                ),
+            )
+            logger.info(f"Qdrant 컬렉션 '{col_name}'에서 문서 '{doc_name}' 포인트 삭제 완료")
+            return True
+        except Exception as e:
+            logger.warning(f"Qdrant 포인트 삭제 실패 (문서: {doc_name}): {e}")
+            return False
+
     def get_collection_info(self, collection_name: Optional[str] = None) -> Dict[str, Any]:
         """컬렉션 통계 정보(포인트 수 등)를 반환합니다."""
         client = self.get_client()

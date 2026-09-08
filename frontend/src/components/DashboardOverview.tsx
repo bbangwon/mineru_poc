@@ -19,6 +19,9 @@ import {
   FileCode2,
   ChevronRight,
   Settings2,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import type { PdfItem, GlobalStats, JobStatusResponse } from '../types';
 
@@ -36,6 +39,8 @@ interface DashboardOverviewProps {
   activeJob: JobStatusResponse | null;
   onRefreshList: () => Promise<void>;
   onOpenQdrantModal: () => void;
+  onDeletePdf?: (filename: string, deleteVectors: boolean) => Promise<void>;
+  onResetEtl?: (filename: string, deleteVectors: boolean) => Promise<void>;
   // Parser settings pass-through
   engine: string;
   setEngine: (v: string) => void;
@@ -67,6 +72,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   activeJob,
   onRefreshList,
   onOpenQdrantModal,
+  onDeletePdf,
+  onResetEtl,
   engine,
   setEngine,
   method,
@@ -86,6 +93,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'running' | 'not_started' | 'embedded'>('all');
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [deleteTargetItem, setDeleteTargetItem] = useState<PdfItem | null>(null);
+  const [deleteMode, setDeleteMode] = useState<'full' | 'reset'>('full');
+  const [deleteVectors, setDeleteVectors] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File size formatter
@@ -793,6 +804,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                               <Download className="w-3.5 h-3.5" />
                             </a>
                           )}
+
+                          {/* Delete Document or Reset ETL Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteTargetItem(item);
+                              setDeleteMode('full');
+                              setDeleteVectors(!!item.is_embedded);
+                            }}
+                            disabled={isRunningThis}
+                            className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs cursor-pointer disabled:opacity-30"
+                            title={isRunningThis ? '파싱 작업 진행 중에는 삭제할 수 없습니다' : '문서 삭제 또는 파싱 초기화'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -803,6 +829,189 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Delete / Reset Confirmation Modal */}
+      {deleteTargetItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    문서 삭제 및 파싱 초기화
+                  </h3>
+                  <p className="text-xs text-slate-500">대시보드 목록에서 문서를 삭제하거나 파싱을 리셋합니다.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteTargetItem(null)}
+                disabled={isDeleting}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Document Info */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/40">
+              <div className="flex items-start gap-3">
+                <FileText className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={deleteTargetItem.filename}>
+                    {deleteTargetItem.filename}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                    <span>{formatBytes(deleteTargetItem.size_bytes)}</span>
+                    <span>•</span>
+                    <span>{deleteTargetItem.total_pages} 페이지</span>
+                    <span>•</span>
+                    <span className={deleteTargetItem.etl_status === 'completed' ? 'text-emerald-600 font-medium' : ''}>
+                      {deleteTargetItem.etl_status === 'completed' ? '파싱 완료됨' : '미변환'}
+                    </span>
+                    {deleteTargetItem.is_embedded && (
+                      <>
+                        <span>•</span>
+                        <span className="text-amber-600 font-medium">Qdrant 색인됨</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Body Options */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">삭제 작업 선택</p>
+
+              <div className="space-y-2.5">
+                {/* Option 1: Full Delete */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    deleteMode === 'full'
+                      ? 'border-rose-500/50 bg-rose-50/50 dark:bg-rose-950/20 text-rose-950 dark:text-rose-200 shadow-2xs'
+                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="full"
+                    checked={deleteMode === 'full'}
+                    onChange={() => setDeleteMode('full')}
+                    className="mt-1 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-bold text-sm block mb-0.5 text-slate-900 dark:text-white">
+                      문서 완전 삭제 (추천)
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
+                      원본 PDF 파일과 모든 파싱 산출물을 디스크에서 완전히 영구 삭제합니다. 대시보드 목록에서 제거되며, 필요 시 언제든 상단의 <strong>[신규 PDF 등록]</strong>으로 다시 가져올(Re-import) 수 있습니다.
+                    </span>
+                  </div>
+                </label>
+
+                {/* Option 2: Reset ETL Only */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    deleteMode === 'reset'
+                      ? 'border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-950 dark:text-indigo-200 shadow-2xs'
+                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="deleteMode"
+                    value="reset"
+                    checked={deleteMode === 'reset'}
+                    onChange={() => setDeleteMode('reset')}
+                    className="mt-1 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-bold text-sm block mb-0.5 text-slate-900 dark:text-white">
+                      파싱 산출물만 초기화 (PDF 원본 유지)
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
+                      PDF 원본 파일은 그대로 유지하고, 생성된 파싱 청크 및 마크다운 산출물만 지워 <strong>'미변환 (대기)'</strong> 초기 상태로 되돌립니다.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Vector Sync Checkbox (if embedded or always allowed) */}
+              <div className="pt-2">
+                <label className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteVectors}
+                    onChange={(e) => setDeleteVectors(e.target.checked)}
+                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-700"
+                  />
+                  <span>Qdrant 벡터 DB 색인 포인트 및 임베딩 캐시 함께 삭제 (권장)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetItem(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              >
+                취소
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (!deleteTargetItem) return;
+                  setIsDeleting(true);
+                  try {
+                    if (deleteMode === 'full') {
+                      if (onDeletePdf) {
+                        await onDeletePdf(deleteTargetItem.filename, deleteVectors);
+                      }
+                    } else {
+                      if (onResetEtl) {
+                        await onResetEtl(deleteTargetItem.filename, deleteVectors);
+                      }
+                    }
+                    setDeleteTargetItem(null);
+                  } catch (e) {
+                    console.error('Action failed:', e);
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ${
+                  deleteMode === 'full'
+                    ? 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700'
+                    : 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700'
+                }`}
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>처리 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{deleteMode === 'full' ? '문서 완전 삭제 실행' : '파싱 초기화 실행'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

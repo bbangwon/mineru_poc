@@ -304,4 +304,32 @@ export async function refineChunkText(
   return res.json();
 }
 
+export async function deletePdfDocument(
+  filename: string,
+  deleteVectors: boolean = true
+): Promise<{ success: boolean; message: string; current_selected_pdf?: string }> {
+  const res = await fetch(`/api/pdf/${encodeURIComponent(filename)}?delete_vectors=${deleteVectors}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || '문서 삭제에 실패했습니다.');
+  }
+  return res.json();
+}
+
+export async function resetEtlByFilename(
+  filename: string,
+  deleteVectors: boolean = true
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`/api/etl/${encodeURIComponent(filename)}?delete_vectors=${deleteVectors}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || '파싱 산출물 초기화에 실패했습니다.');
+  }
+  return res.json();
+}
+
 

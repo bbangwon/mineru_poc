@@ -305,5 +305,60 @@ class EmbeddingService:
 
         return formatted_results
 
+    def delete_document_vectors(
+        self,
+        doc_name: str,
+        config: Optional[QdrantConfig] = None,
+        collection_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Qdrant 컬렉션 및 rag_chunks_embedded.json에서 특정 문서의 벡터와 청크를 삭제합니다."""
+        cfg = config or get_qdrant_config()
+        manager = self.get_manager(cfg)
+        target_col = collection_name or cfg.collection_name
+
+        # 1. Qdrant 벡터 포인트 삭제
+        qdrant_deleted = False
+        try:
+            qdrant_deleted = manager.delete_by_doc_id(doc_name, collection_name=target_col)
+        except Exception as e:
+            logger.warning(f"Qdrant 벡터 포인트 삭제 실패 (문서: {doc_name}): {e}")
+
+        # 2. 로컬 rag_chunks_embedded.json 내 해당 문서 청크 삭제
+        json_deleted_count = 0
+        if EMBEDDED_JSON_PATH.exists():
+            try:
+                with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                original_chunks = data.get("chunks", [])
+                filtered_chunks = []
+                for chunk in original_chunks:
+                    p = chunk.get("payload", {})
+                    cid = p.get("doc_id") or ""
+                    ctitle = p.get("doc_title") or ""
+                    bcs = p.get("breadcrumbs", [])
+                    first_bc = str(bcs[0]).strip() if bcs else ""
+
+                    # doc_name과 일치하는 청크 제외
+                    if doc_name in [cid, ctitle, first_bc] or doc_name in str(chunk.get("chunk_id", "")):
+                        json_deleted_count += 1
+                        continue
+                    filtered_chunks.append(chunk)
+
+                data["chunks"] = filtered_chunks
+                data["total_chunks"] = len(filtered_chunks)
+                with open(EMBEDDED_JSON_PATH, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+
+                logger.info(f"rag_chunks_embedded.json에서 {json_deleted_count}개 청크 정리 완료 (문서: {doc_name})")
+            except Exception as e:
+                logger.warning(f"rag_chunks_embedded.json 청크 정리 실패 (문서: {doc_name}): {e}")
+
+        return {
+            "success": True,
+            "qdrant_deleted": qdrant_deleted,
+            "json_deleted_count": json_deleted_count,
+        }
+
 
 embedding_svc = EmbeddingService()

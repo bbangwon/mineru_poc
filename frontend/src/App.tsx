@@ -23,6 +23,8 @@ import {
   startEmbedJob,
   getEmbedStatus,
   getQdrantConfig,
+  deletePdfDocument,
+  resetEtlByFilename,
 } from './api/client';
 import {
   getNextChunkId,
@@ -361,6 +363,43 @@ export function App() {
 
   const handleDropUploadPdf = async (file: File) => {
     await handleUploadPdf(file);
+  };
+
+  // 3-1. Delete PDF Document completely
+  const handleDeletePdfDocument = async (filename: string, deleteVectors: boolean = true) => {
+    try {
+      const res = await deletePdfDocument(filename, deleteVectors);
+      showToast(res.message || `문서 '${filename}'이(가) 완전히 삭제되었습니다.`);
+      await fetchPdfs();
+      if (filename === selectedPdf) {
+        if (res.current_selected_pdf) {
+          await handleSelectPdf(res.current_selected_pdf);
+        } else {
+          setSelectedPdf('');
+          setEtlData(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Delete document failed:', err);
+      showToast(err.message || '문서 삭제 중 오류가 발생했습니다.', true);
+      throw err;
+    }
+  };
+
+  // 3-2. Reset ETL Parsing Results (Keep PDF)
+  const handleResetEtlDocument = async (filename: string, deleteVectors: boolean = true) => {
+    try {
+      const res = await resetEtlByFilename(filename, deleteVectors);
+      showToast(res.message || `문서 '${filename}'의 파싱 결과가 초기화되었습니다.`);
+      await fetchPdfs();
+      if (filename === selectedPdf) {
+        await fetchSample();
+      }
+    } catch (err: any) {
+      console.error('Reset ETL failed:', err);
+      showToast(err.message || '파싱 초기화 중 오류가 발생했습니다.', true);
+      throw err;
+    }
   };
 
   // 4. Run ETL Pipeline via Asynchronous Background Task
@@ -1974,6 +2013,8 @@ export function App() {
             setStartPage={setStartPage}
             endPage={endPage}
             setEndPage={setEndPage}
+            onDeletePdf={handleDeletePdfDocument}
+            onResetEtl={handleResetEtlDocument}
           />
         ) : activeTab === 'studio' ? (
           /* Chunk Studio Mode: 3-Column Focus IDE Workspace */

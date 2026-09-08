@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import uuid
@@ -534,6 +535,108 @@ async def upload_pdf(file: UploadFile = File(...)):
         "filename": file.filename,
         "total_pages": pages,
         "size_bytes": save_path.stat().st_size,
+    }
+
+
+def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vectors: bool = True) -> Dict[str, Any]:
+    """문서의 파싱 산출물 폴더, Qdrant 벡터, PDF 원본(옵션) 및 캐시를 안전하게 정리"""
+    global current_selected_pdf_name, latest_etl_result, latest_content_list_path
+    global _embedded_cache_mtime, _doc_stats_cache
+
+    stem = Path(filename).stem
+    deleted_folders = []
+    deleted_files = []
+
+    # 1. 백그라운드 진행 중 태스크 검사
+    for j in jobs_db.values():
+        if j.get("filename") == filename and j.get("status") in ["pending", "running"]:
+            raise HTTPException(status_code=400, detail="현재 백그라운드 파싱이 진행 중인 문서는 삭제할 수 없습니다.")
+
+    # 2. 파싱 산출물 디렉터리 탐색 및 삭제
+    if OUTPUT_DIR.exists():
+        for root, dirs, files in os.walk(OUTPUT_DIR, topdown=False):
+            for d in dirs:
+                if d == stem:
+                    target_dir = Path(root) / d
+                    try:
+                        shutil.rmtree(target_dir, ignore_errors=True)
+                        deleted_folders.append(str(target_dir.relative_to(BASE_DIR)))
+                    except Exception as e:
+                        print(f"디렉터리 삭제 실패 {target_dir}: {e}")
+
+    # 3. Qdrant 벡터 및 임베딩 JSON 동기화 정리
+    vector_res = None
+    if delete_vectors:
+        try:
+            vector_res = embedding_svc.delete_document_vectors(stem)
+            _embedded_cache_mtime = 0  # 캐시 강제 무효화
+        except Exception as e:
+            print(f"벡터 데이터 삭제 실패 ({stem}): {e}")
+
+    # 4. 인메모리 캐시 및 활성 결과 초기화
+    keys_to_remove = [k for k in _doc_stats_cache if stem in k]
+    for k in keys_to_remove:
+        _doc_stats_cache.pop(k, None)
+
+    if latest_etl_result and (latest_etl_result.get("active_pdf") == filename or stem in latest_etl_result.get("doc_title", "")):
+        latest_etl_result = None
+        latest_content_list_path = None
+
+    # 5. 원본 PDF 파일 삭제 (완전 삭제 요청 시)
+    if delete_pdf:
+        targets = [DOCS_DIR / filename, BASE_DIR / "pdfs" / filename]
+        for p in targets:
+            if p.exists():
+                try:
+                    p.unlink()
+                    deleted_files.append(str(p.relative_to(BASE_DIR)))
+                except Exception as e:
+                    print(f"PDF 파일 삭제 실패 {p}: {e}")
+
+        # 활성 PDF가 삭제된 경우 다음 PDF로 자동 전환
+        if current_selected_pdf_name == filename:
+            remaining_pdfs = [p.name for p in DOCS_DIR.glob("*.pdf")]
+            current_selected_pdf_name = remaining_pdfs[0] if remaining_pdfs else None
+
+    return {
+        "success": True,
+        "filename": filename,
+        "deleted_folders": deleted_folders,
+        "deleted_files": deleted_files,
+        "vector_result": vector_res,
+        "current_selected_pdf": current_selected_pdf_name,
+    }
+
+
+@app.delete("/api/pdf/{filename}")
+async def delete_pdf_document(filename: str, delete_vectors: bool = True):
+    """PDF 파일 및 모든 파싱 산출물, Qdrant 벡터 색인을 완전히 삭제"""
+    target = DOCS_DIR / filename
+    extra = BASE_DIR / "pdfs" / filename
+    if not target.exists() and not extra.exists():
+        raise HTTPException(status_code=404, detail=f"문서 '{filename}'을 찾을 수 없습니다.")
+
+    res = clean_document_artifacts(filename, delete_pdf=True, delete_vectors=delete_vectors)
+    return {
+        "success": True,
+        "message": f"문서 '{filename}' 및 관련 산출물이 완전히 삭제되었습니다.",
+        **res,
+    }
+
+
+@app.delete("/api/etl/{filename}")
+async def reset_etl_by_filename(filename: str, delete_vectors: bool = True):
+    """PDF 원본은 유지하고, ETL 파싱 산출물과 벡터 색인만 초기화하여 미변환 상태로 복원"""
+    target = DOCS_DIR / filename
+    extra = BASE_DIR / "pdfs" / filename
+    if not target.exists() and not extra.exists():
+        raise HTTPException(status_code=404, detail=f"문서 '{filename}'을 찾을 수 없습니다.")
+
+    res = clean_document_artifacts(filename, delete_pdf=False, delete_vectors=delete_vectors)
+    return {
+        "success": True,
+        "message": f"문서 '{filename}'의 ETL 파싱 산출물이 초기화되었습니다.",
+        **res,
     }
 
 
