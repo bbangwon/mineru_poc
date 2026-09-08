@@ -26,7 +26,13 @@ import {
   getEmbedStatus,
   getQdrantConfig,
 } from './api/client';
-import { getNextChunkId, reindexEtlData, estimateKoreanTokens } from './utils/idUtils';
+import {
+  getNextChunkId,
+  getNextParentChunkId,
+  generateDocId,
+  reindexEtlData,
+  estimateKoreanTokens,
+} from './utils/idUtils';
 import { syncChunkPageMetadata } from './utils/pageUtils';
 import type {
   PdfItem,
@@ -1259,6 +1265,412 @@ export function App() {
     );
   };
 
+  // 10-1. Add Parent Chunk Handler (with Initial Child Chunk)
+  const handleAddParent = (data: {
+    sectionId: string;
+    title: string;
+    pageNumber: number;
+    initialChildText: string;
+    chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+  }) => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetSection = sections.find((s) => s.id === data.sectionId);
+    if (!targetSection) {
+      showToast(`지정된 섹션(${data.sectionId})을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const docId = etlData.doc_id || generateDocId(etlData.doc_title);
+    const newParentId = getNextParentChunkId(etlData.parent_chunks || [], docId);
+    const newChildId = getNextChunkId(etlData.child_chunks || [], docId);
+
+    const childEstimate = estimateKoreanTokens(data.initialChildText);
+    const secBreadcrumbs =
+      targetSection.breadcrumbs && targetSection.breadcrumbs.length > 0
+        ? targetSection.breadcrumbs
+        : [targetSection.title];
+    const childBreadcrumbs = [...secBreadcrumbs, data.title];
+
+    // 1) 신규 Child 생성
+    const newChild: ChildChunk = {
+      chunk_id: newChildId,
+      parent_chunk_id: newParentId,
+      parent_id: newParentId,
+      section_id: data.sectionId,
+      chunk_type: data.chunkType,
+      text: data.initialChildText,
+      token_estimate: childEstimate,
+      page_number: data.pageNumber,
+      breadcrumbs: childBreadcrumbs,
+      is_edited: true,
+      metadata: syncChunkPageMetadata({}, data.pageNumber),
+    };
+
+    // 2) 신규 Parent 생성
+    const newParent: ParentChunk = {
+      parent_chunk_id: newParentId,
+      id: newParentId,
+      section_id: data.sectionId,
+      title: data.title,
+      text: data.initialChildText,
+      token_estimate: childEstimate,
+      child_chunk_ids: [newChildId],
+      page_range: [data.pageNumber, data.pageNumber],
+      is_edited: true,
+    };
+
+    // 3) Section 갱신: parent_chunk_ids 및 child_chunk_ids 추가, page_range 확장
+    const updatedSections = sections.map((sec) => {
+      if (sec.id === data.sectionId) {
+        const pRange = sec.page_range || [data.pageNumber, data.pageNumber];
+        const newPageRange: [number, number] = [
+          Math.min(pRange[0], data.pageNumber),
+          Math.max(pRange[1], data.pageNumber),
+        ];
+        return {
+          ...sec,
+          parent_chunk_ids: [...(sec.parent_chunk_ids || []), newParentId],
+          child_chunk_ids: [...(sec.child_chunk_ids || []), newChildId],
+          page_range: newPageRange,
+        };
+      }
+      return sec;
+    });
+
+    const updatedParents = [...(etlData.parent_chunks || []), newParent];
+    const updatedChildren = [...(etlData.child_chunks || []), newChild];
+
+    const totalWords = updatedChildren.reduce(
+      (acc, c) => acc + (c.text ? c.text.trim().split(/\s+/).length : 0),
+      0
+    );
+    const paragraphChunks = updatedChildren.filter((c) => c.chunk_type === 'paragraph').length;
+    const tableChunks = updatedChildren.filter((c) => c.chunk_type === 'table').length;
+    const articleChunks = updatedChildren.filter(
+      (c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause'
+    ).length;
+
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_chunks: updatedParents.length,
+      total_child_chunks: updatedChildren.length,
+      paragraph_chunks: paragraphChunks,
+      table_chunks: tableChunks,
+      article_chunks: articleChunks,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      parent_chunks: updatedParents,
+      child_chunks: updatedChildren,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    setSelectedSectionId(data.sectionId);
+    setSelectedParentChunkId(newParentId);
+    showToast(`새 Parent '${data.title}' 및 Child 청크가 성공적으로 생성되었습니다.`);
+  };
+
+  // 10-2. Add Child Chunk to Parent Handler
+  const handleAddChild = (data: {
+    parentChunkId: string;
+    text: string;
+    chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+    pageNumber: number;
+    pageEnd?: number;
+    rawHtml?: string;
+  }) => {
+    if (!etlData) return;
+    const parentChunks = etlData.parent_chunks || [];
+    const targetParent = parentChunks.find(
+      (p) => p.parent_chunk_id === data.parentChunkId || p.id === data.parentChunkId
+    );
+    if (!targetParent) {
+      showToast(`대상 Parent 청크(${data.parentChunkId})를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetSection = sections.find((s) => s.id === targetParent.section_id);
+
+    const docId = etlData.doc_id || generateDocId(etlData.doc_title);
+    const newChildId = getNextChunkId(etlData.child_chunks || [], docId);
+    const childEstimate = estimateKoreanTokens(data.text);
+
+    const secBreadcrumbs =
+      targetSection?.breadcrumbs || (targetSection?.title ? [targetSection.title] : []);
+    const childBreadcrumbs = targetParent.title
+      ? [...secBreadcrumbs, targetParent.title]
+      : [...secBreadcrumbs];
+
+    // 1) 신규 Child 객체
+    const newChild: ChildChunk = {
+      chunk_id: newChildId,
+      parent_chunk_id: data.parentChunkId,
+      parent_id: data.parentChunkId,
+      section_id: targetParent.section_id,
+      chunk_type: data.chunkType,
+      text: data.text,
+      token_estimate: childEstimate,
+      page_number: data.pageNumber,
+      page_end: data.pageEnd,
+      raw_html: data.rawHtml,
+      is_table: data.chunkType === 'table',
+      breadcrumbs: childBreadcrumbs,
+      is_edited: true,
+      metadata: syncChunkPageMetadata({}, data.pageNumber, data.pageEnd),
+    };
+
+    const updatedChildren = [...(etlData.child_chunks || []), newChild];
+
+    // 2) Parent 텍스트, 토큰 및 page_range 재계산
+    const parentChildren = updatedChildren.filter(
+      (c) => c.parent_chunk_id === data.parentChunkId || c.parent_id === data.parentChunkId
+    );
+    const parentCombinedText = parentChildren
+      .map((c) => c.text)
+      .filter(Boolean)
+      .join('\n\n');
+    const parentTokens = estimateKoreanTokens(parentCombinedText);
+
+    let minPage = data.pageNumber;
+    let maxPage = data.pageEnd || data.pageNumber;
+    parentChildren.forEach((c) => {
+      if (c.page_number) minPage = Math.min(minPage, c.page_number);
+      const endP = c.page_end || c.page_number;
+      if (endP) maxPage = Math.max(maxPage, endP);
+    });
+
+    const updatedParents = parentChunks.map((p) => {
+      if (p.parent_chunk_id === data.parentChunkId || p.id === data.parentChunkId) {
+        return {
+          ...p,
+          child_chunk_ids: [...(p.child_chunk_ids || []), newChildId],
+          text: parentCombinedText,
+          token_estimate: parentTokens,
+          page_range: [minPage, maxPage] as [number, number],
+          is_edited: true,
+        };
+      }
+      return p;
+    });
+
+    // 3) Section 갱신: child_chunk_ids 추가 및 page_range 확장
+    const updatedSections = sections.map((sec) => {
+      if (sec.id === targetParent.section_id) {
+        const pRange = sec.page_range || [minPage, maxPage];
+        return {
+          ...sec,
+          child_chunk_ids: [...(sec.child_chunk_ids || []), newChildId],
+          page_range: [Math.min(pRange[0], minPage), Math.max(pRange[1], maxPage)] as [
+            number,
+            number,
+          ],
+        };
+      }
+      return sec;
+    });
+
+    const totalWords = updatedChildren.reduce(
+      (acc, c) => acc + (c.text ? c.text.trim().split(/\s+/).length : 0),
+      0
+    );
+    const paragraphChunks = updatedChildren.filter((c) => c.chunk_type === 'paragraph').length;
+    const tableChunks = updatedChildren.filter((c) => c.chunk_type === 'table').length;
+    const articleChunks = updatedChildren.filter(
+      (c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause'
+    ).length;
+
+    const updatedStats = {
+      ...etlData.stats,
+      total_child_chunks: updatedChildren.length,
+      paragraph_chunks: paragraphChunks,
+      table_chunks: tableChunks,
+      article_chunks: articleChunks,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      parent_chunks: updatedParents,
+      child_chunks: updatedChildren,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    setSelectedParentChunkId(data.parentChunkId);
+    showToast(`Parent(${data.parentChunkId})에 새 Child 청크(${newChildId})가 추가되었습니다.`);
+  };
+
+  // 10-3. Update Parent Chunk Handler
+  const handleUpdateParent = (
+    parentChunkId: string,
+    updates: { title: string; sectionId: string }
+  ) => {
+    if (!etlData) return;
+    const parentChunks = etlData.parent_chunks || [];
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetParent = parentChunks.find(
+      (p) => p.parent_chunk_id === parentChunkId || p.id === parentChunkId
+    );
+    if (!targetParent) {
+      showToast(`대상 Parent 청크(${parentChunkId})를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const oldSectionId = targetParent.section_id;
+    const newSectionId = updates.sectionId;
+    const targetSection = sections.find((s) => s.id === newSectionId);
+    if (!targetSection) {
+      showToast(`선택한 섹션을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const pid = targetParent.parent_chunk_id || targetParent.id || '';
+    const childIdSet = new Set(targetParent.child_chunk_ids || []);
+
+    // 1) Parent 업데이트
+    const updatedParents = parentChunks.map((p) => {
+      if ((p.parent_chunk_id || p.id) === pid) {
+        return {
+          ...p,
+          title: updates.title,
+          section_id: newSectionId,
+          is_edited: true,
+        };
+      }
+      return p;
+    });
+
+    // 2) Child 청크들 breadcrumbs 및 section_id 동기화
+    const secBreadcrumbs =
+      targetSection.breadcrumbs && targetSection.breadcrumbs.length > 0
+        ? targetSection.breadcrumbs
+        : [targetSection.title];
+    const newBreadcrumbs = updates.title
+      ? [...secBreadcrumbs, updates.title]
+      : [...secBreadcrumbs];
+
+    const updatedChildren = (etlData.child_chunks || []).map((c) => {
+      if (childIdSet.has(c.chunk_id) || c.parent_chunk_id === pid || c.parent_id === pid) {
+        return {
+          ...c,
+          section_id: newSectionId,
+          breadcrumbs: newBreadcrumbs,
+          is_edited: true,
+        };
+      }
+      return c;
+    });
+
+    // 3) 섹션 변경 시 Sections 배열 동기화
+    let updatedSections = sections;
+    if (oldSectionId !== newSectionId) {
+      updatedSections = sections.map((sec) => {
+        if (sec.id === oldSectionId) {
+          return {
+            ...sec,
+            parent_chunk_ids: (sec.parent_chunk_ids || []).filter((id) => id !== pid),
+            child_chunk_ids: (sec.child_chunk_ids || []).filter((id) => !childIdSet.has(id)),
+          };
+        }
+        if (sec.id === newSectionId) {
+          const pIds = [...(sec.parent_chunk_ids || [])];
+          if (!pIds.includes(pid)) pIds.push(pid);
+          const cIds = [...(sec.child_chunk_ids || [])];
+          (targetParent.child_chunk_ids || []).forEach((cid) => {
+            if (!cIds.includes(cid)) cIds.push(cid);
+          });
+          return {
+            ...sec,
+            parent_chunk_ids: pIds,
+            child_chunk_ids: cIds,
+          };
+        }
+        return sec;
+      });
+    }
+
+    setEtlData({
+      ...etlData,
+      parent_chunks: updatedParents,
+      child_chunks: updatedChildren,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+    });
+    setIsDirty(true);
+    showToast(`Parent '${updates.title}' 정보가 수정되었습니다.`);
+  };
+
+  // 10-4. Delete Parent Chunk Handler
+  const handleDeleteParent = (parentChunkId: string) => {
+    if (!etlData) return;
+    const parentChunks = etlData.parent_chunks || [];
+    const targetParent = parentChunks.find(
+      (p) => p.parent_chunk_id === parentChunkId || p.id === parentChunkId
+    );
+    if (!targetParent) {
+      showToast(`대상 Parent 청크(${parentChunkId})를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const pid = targetParent.parent_chunk_id || targetParent.id || '';
+    const childIdSet = new Set(targetParent.child_chunk_ids || []);
+
+    // 1) Parent 및 소속 Child 필터링 제거
+    const updatedParents = parentChunks.filter(
+      (p) => (p.parent_chunk_id || p.id) !== pid
+    );
+    const updatedChildren = (etlData.child_chunks || []).filter(
+      (c) => !childIdSet.has(c.chunk_id) && c.parent_chunk_id !== pid && c.parent_id !== pid
+    );
+
+    // 2) Sections에서 제거
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const updatedSections = sections.map((sec) => ({
+      ...sec,
+      parent_chunk_ids: (sec.parent_chunk_ids || []).filter((id) => id !== pid),
+      child_chunk_ids: (sec.child_chunk_ids || []).filter((id) => !childIdSet.has(id)),
+    }));
+
+    // 3) 통계 갱신
+    const totalWords = updatedChildren.reduce(
+      (acc, c) => acc + (c.text ? c.text.trim().split(/\s+/).length : 0),
+      0
+    );
+    const paragraphChunks = updatedChildren.filter((c) => c.chunk_type === 'paragraph').length;
+    const tableChunks = updatedChildren.filter((c) => c.chunk_type === 'table').length;
+    const articleChunks = updatedChildren.filter(
+      (c) => c.chunk_type === 'article' || c.chunk_type === 'article_clause'
+    ).length;
+
+    const updatedStats = {
+      ...etlData.stats,
+      total_parent_chunks: updatedParents.length,
+      total_child_chunks: updatedChildren.length,
+      paragraph_chunks: paragraphChunks,
+      table_chunks: tableChunks,
+      article_chunks: articleChunks,
+      total_words: totalWords,
+    };
+
+    setEtlData({
+      ...etlData,
+      parent_chunks: updatedParents,
+      child_chunks: updatedChildren,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+      stats: updatedStats,
+    });
+    setIsDirty(true);
+    showToast(`Parent '${targetParent.title || pid}' 및 소속 자식 청크가 삭제되었습니다.`);
+  };
+
   // 11. Batch Clean Empty Chunks Handler (Phase 3)
   const handleBatchCleanEmptyChunks = () => {
     if (!etlData) return;
@@ -1495,6 +1907,10 @@ export function App() {
               onUpdateSectionTitle={handleUpdateSectionTitle}
               onDeleteSection={handleDeleteSection}
               onAddSection={handleAddSection}
+              onAddParent={handleAddParent}
+              onAddChild={handleAddChild}
+              onUpdateParent={handleUpdateParent}
+              onDeleteParent={handleDeleteParent}
               onBatchCleanEmptySections={handleBatchCleanEmptySections}
               onToggleIgnoreChunk={handleToggleIgnoreChunk}
               onOpenJsonlModal={setActiveModalChunk}

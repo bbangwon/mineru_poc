@@ -37,6 +37,9 @@ import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
 import { AddSectionModal } from './AddSectionModal';
+import { AddParentModal } from './AddParentModal';
+import { AddChildModal } from './AddChildModal';
+import { EditParentModal } from './EditParentModal';
 import { formatChunkPage, formatChunkPageFull } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
@@ -56,6 +59,26 @@ interface ChunkStudioProps {
     parentSectionId?: string;
     level: number;
   }) => void;
+  onAddParent?: (data: {
+    sectionId: string;
+    title: string;
+    pageNumber: number;
+    initialChildText: string;
+    chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+  }) => void;
+  onAddChild?: (data: {
+    parentChunkId: string;
+    text: string;
+    chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+    pageNumber: number;
+    pageEnd?: number;
+    rawHtml?: string;
+  }) => void;
+  onUpdateParent?: (
+    parentChunkId: string,
+    updates: { title: string; sectionId: string }
+  ) => void;
+  onDeleteParent?: (parentChunkId: string) => void;
   onBatchCleanEmptySections?: () => void;
   onToggleIgnoreChunk: (chunkId: string) => void;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
@@ -90,6 +113,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onUpdateSectionTitle,
   onDeleteSection,
   onAddSection,
+  onAddParent,
+  onAddChild,
+  onUpdateParent,
+  onDeleteParent,
   onBatchCleanEmptySections,
   onToggleIgnoreChunk,
   onOpenJsonlModal,
@@ -101,6 +128,16 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onReindexIds,
   isLoading,
 }) => {
+  // Modal states for Parent & Child CRUD
+  const [isAddParentModalOpen, setIsAddParentModalOpen] = useState(false);
+  const [targetSectionIdForAddParent, setTargetSectionIdForAddParent] = useState<string | null>(null);
+
+  const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
+  const [targetParentForAddChild, setTargetParentForAddChild] = useState<ParentChunk | null>(null);
+
+  const [isEditParentModalOpen, setIsEditParentModalOpen] = useState(false);
+  const [targetParentForEdit, setTargetParentForEdit] = useState<ParentChunk | null>(null);
+
   // 1. Column 1 State (Hierarchy Tree)
   const [sectionSearch, setSectionSearch] = useState('');
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
@@ -1019,6 +1056,22 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
+                            {/* Hover add Parent chunk trigger */}
+                            {onAddParent && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTargetSectionIdForAddParent(sec.id);
+                                  setIsAddParentModalOpen(true);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-purple-600 hover:text-purple-800 transition p-0.5 rounded hover:bg-purple-100 cursor-pointer"
+                                title="이 섹션에 새 Parent 청크 추가"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            )}
+
                             {/* Hover inline edit trigger */}
                             <button
                               type="button"
@@ -1202,6 +1255,54 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                         </div>
 
                                         <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
+                                          {/* Action buttons on hover */}
+                                          {onAddChild && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTargetParentForAddChild(parent);
+                                                setIsAddChildModalOpen(true);
+                                              }}
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-indigo-600 hover:text-indigo-800 rounded hover:bg-purple-100 transition cursor-pointer"
+                                              title="이 Parent에 새 Child 청크 추가"
+                                            >
+                                              <Plus className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                          {onUpdateParent && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTargetParentForEdit(parent);
+                                                setIsEditParentModalOpen(true);
+                                              }}
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-purple-100 transition cursor-pointer"
+                                              title="Parent 제목 및 섹션 수정"
+                                            >
+                                              <Edit2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                          {onDeleteParent && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const confirmed = window.confirm(
+                                                  `정말로 '${parent.title || pid}' 부모 청크를 삭제하시겠습니까?\n소속된 ${pChildren.length}개 자식 청크도 함께 삭제됩니다.`
+                                                );
+                                                if (confirmed) {
+                                                  onDeleteParent(pid);
+                                                }
+                                              }}
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition cursor-pointer"
+                                              title="Parent 및 자식 청크 삭제"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+
                                           <span
                                             className={`px-1 py-0.2 rounded ${
                                               (parent.token_estimate || 0) > 2048
@@ -1594,12 +1695,80 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         >
                           ~{pWords} tok
                         </span>
+
+                        {/* + Child Button */}
+                        {onAddChild && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTargetParentForAddChild(parent);
+                              setIsAddChildModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[11px] font-semibold transition cursor-pointer shadow-2xs"
+                            title="이 Parent에 새 Child 청크 추가"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Child 추가</span>
+                          </button>
+                        )}
+
+                        {/* Edit Parent Button */}
+                        {onUpdateParent && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTargetParentForEdit(parent);
+                              setIsEditParentModalOpen(true);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600 bg-white hover:bg-indigo-50 border border-slate-200 rounded-md transition cursor-pointer shadow-2xs"
+                            title="Parent 제목 및 섹션 수정"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+
+                        {/* Delete Parent Button */}
+                        {onDeleteParent && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                `정말로 '${parent.title || pid}' 부모 청크를 삭제하시겠습니까?\n소속된 ${group.children.length}개의 자식 청크도 함께 삭제됩니다.`
+                              );
+                              if (confirmed) {
+                                onDeleteParent(pid);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-md transition cursor-pointer shadow-2xs"
+                            title="Parent 및 소속 자식 청크 삭제"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
                     {/* Child Cards inside Parent Container */}
                     <div className="space-y-2">
-                      {group.children.map((chunk) => {
+                      {group.children.length === 0 ? (
+                        <div className="py-4 text-center border-2 border-dashed border-slate-200 rounded-xl bg-white/60">
+                          <p className="text-xs text-slate-400 mb-1.5 font-medium">소속된 자식 청크가 없습니다.</p>
+                          {onAddChild && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetParentForAddChild(parent);
+                                setIsAddChildModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-semibold transition cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>첫 번째 Child 청크 추가</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        group.children.map((chunk) => {
                         const isSelected = activeChunkId === chunk.chunk_id;
                         const isChecked = selectedChunkIds.has(chunk.chunk_id);
                         const isTable = chunk.chunk_type === 'table' || Boolean(chunk.is_atomic_table);
@@ -1758,7 +1927,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             </div>
                           </div>
                         );
-                      })}
+                      })
+                    )}
                     </div>
                   </div>
                 );
@@ -1936,6 +2106,20 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         <span className="text-slate-700 font-medium truncate max-w-xs">
                           · {activeParentChunk.title}
                         </span>
+                      )}
+                      {onUpdateParent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetParentForEdit(activeParentChunk);
+                            setIsEditParentModalOpen(true);
+                          }}
+                          className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-semibold ml-1 cursor-pointer"
+                          title="Parent 정보 수정"
+                        >
+                          <Edit2 className="w-2.5 h-2.5" />
+                          <span>수정</span>
+                        </button>
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-slate-600 font-mono">
@@ -2387,6 +2571,50 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           onClose={() => setIsAddSectionModalOpen(false)}
           parentSections={parentSections}
           onAddSection={onAddSection}
+        />
+      )}
+
+      {/* Add Parent Modal */}
+      {onAddParent && (
+        <AddParentModal
+          isOpen={isAddParentModalOpen}
+          onClose={() => setIsAddParentModalOpen(false)}
+          sections={parentSections}
+          defaultSectionId={targetSectionIdForAddParent || selectedSectionId}
+          onAddParent={onAddParent}
+        />
+      )}
+
+      {/* Add Child Modal */}
+      {onAddChild && (
+        <AddChildModal
+          isOpen={isAddChildModalOpen}
+          onClose={() => {
+            setIsAddChildModalOpen(false);
+            setTargetParentForAddChild(null);
+          }}
+          parentChunk={targetParentForAddChild}
+          sectionTitle={
+            targetParentForAddChild
+              ? parentMap.get(targetParentForAddChild.section_id)?.title
+              : undefined
+          }
+          onAddChild={onAddChild}
+        />
+      )}
+
+      {/* Edit Parent Modal */}
+      {onUpdateParent && (
+        <EditParentModal
+          isOpen={isEditParentModalOpen}
+          onClose={() => {
+            setIsEditParentModalOpen(false);
+            setTargetParentForEdit(null);
+          }}
+          parentChunk={targetParentForEdit}
+          sections={parentSections}
+          onUpdateParent={onUpdateParent}
+          onDeleteParent={onDeleteParent}
         />
       )}
 
