@@ -22,6 +22,7 @@ import {
   FolderTree,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   ShieldCheck,
   Sparkles,
   Info,
@@ -79,6 +80,7 @@ interface ChunkStudioProps {
     updates: { title: string; sectionId: string }
   ) => void;
   onDeleteParent?: (parentChunkId: string) => void;
+  onMoveParent?: (parentChunkId: string, direction: 'up' | 'down') => void;
   onBatchCleanEmptySections?: () => void;
   onToggleIgnoreChunk: (chunkId: string) => void;
   onOpenJsonlModal: (chunk: ChildChunk) => void;
@@ -117,6 +119,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onAddChild,
   onUpdateParent,
   onDeleteParent,
+  onMoveParent,
   onBatchCleanEmptySections,
   onToggleIgnoreChunk,
   onOpenJsonlModal,
@@ -1188,13 +1191,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             const unassignedChildren = sectionChildren.filter(
                               (c) =>
                                 !assignedChildIds.has(c.chunk_id) &&
-                                (!c.parent_chunk_id || c.parent_chunk_id === 'unassigned')
+                            (!c.parent_chunk_id || c.parent_chunk_id === 'unassigned')
                             );
 
                             return (
                               <>
-                                {secParents.map((parent) => {
+                                {secParents.map((parent, parentIdx) => {
                                   const pid = parent.parent_chunk_id || parent.id || '';
+                                  const isFirstParent = parentIdx === 0;
+                                  const isLastParent = parentIdx === secParents.length - 1;
                                   const pExpanded = isParentExpanded(pid);
                                   const pChildren =
                                     childChunksByParent.get(pid) ||
@@ -1256,6 +1261,42 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                                         <div className="flex items-center gap-1 shrink-0 font-mono text-[9px]">
                                           {/* Action buttons on hover */}
+                                          {onMoveParent && secParents.length > 1 && (
+                                            <div className="flex items-center gap-0.5 opacity-0 group-hover/parent:opacity-100 transition">
+                                              <button
+                                                type="button"
+                                                disabled={isFirstParent}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  onMoveParent(pid, 'up');
+                                                }}
+                                                className={`p-0.5 rounded transition ${
+                                                  isFirstParent
+                                                    ? 'text-slate-300 cursor-not-allowed'
+                                                    : 'text-purple-600 hover:text-purple-950 hover:bg-purple-100 cursor-pointer'
+                                                }`}
+                                                title={isFirstParent ? '맨 위 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
+                                              >
+                                                <ChevronUp className="w-2.5 h-2.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                disabled={isLastParent}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  onMoveParent(pid, 'down');
+                                                }}
+                                                className={`p-0.5 rounded transition ${
+                                                  isLastParent
+                                                    ? 'text-slate-300 cursor-not-allowed'
+                                                    : 'text-purple-600 hover:text-purple-950 hover:bg-purple-100 cursor-pointer'
+                                                }`}
+                                                title={isLastParent ? '맨 아래 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
+                                              >
+                                                <ChevronDown className="w-2.5 h-2.5" />
+                                              </button>
+                                            </div>
+                                          )}
                                           {onAddChild && (
                                             <button
                                               type="button"
@@ -1633,6 +1674,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 const pWords = parent.token_estimate || 0;
                 const isParentOver = pWords > 2048;
                 const parentSec = parentMap.get(parent.section_id);
+                const secPids = parentSec?.parent_chunk_ids && parentSec.parent_chunk_ids.length > 0
+                  ? parentSec.parent_chunk_ids
+                  : (parentChunksBySection.get(parent.section_id) || []).map((p) => p.parent_chunk_id || p.id || '');
+                const pIdxInSec = secPids.indexOf(pid);
+                const isFirstInSec = pIdxInSec === 0;
+                const isLastInSec = pIdxInSec === secPids.length - 1 || pIdxInSec === -1;
 
                 return (
                   <div
@@ -1660,6 +1707,38 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        {/* Parent Order Move Up/Down Buttons */}
+                        {onMoveParent && secPids.length > 1 && (
+                          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+                            <button
+                              type="button"
+                              disabled={isFirstInSec}
+                              onClick={() => onMoveParent(pid, 'up')}
+                              className={`p-1 rounded transition ${
+                                isFirstInSec
+                                  ? 'text-slate-300 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-950 hover:bg-purple-50 cursor-pointer'
+                              }`}
+                              title={isFirstInSec ? '해당 섹션의 첫 번째 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
+                            >
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isLastInSec}
+                              onClick={() => onMoveParent(pid, 'down')}
+                              className={`p-1 rounded transition ${
+                                isLastInSec
+                                  ? 'text-slate-300 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-950 hover:bg-purple-50 cursor-pointer'
+                              }`}
+                              title={isLastInSec ? '해당 섹션의 마지막 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+
                         {/* Fast Section Reassign Dropdown */}
                         <div
                           className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 shadow-2xs"
@@ -2121,6 +2200,47 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           <span>수정</span>
                         </button>
                       )}
+                      {onMoveParent && (() => {
+                        const apId = activeParentChunk.parent_chunk_id || activeParentChunk.id || '';
+                        const aSec = parentMap.get(activeParentChunk.section_id);
+                        const secPids = aSec?.parent_chunk_ids && aSec.parent_chunk_ids.length > 0
+                          ? aSec.parent_chunk_ids
+                          : (parentChunksBySection.get(activeParentChunk.section_id) || []).map((p) => p.parent_chunk_id || p.id || '');
+                        const pIdx = secPids.indexOf(apId);
+                        const isFirst = pIdx === 0;
+                        const isLast = pIdx === secPids.length - 1 || pIdx === -1;
+                        if (secPids.length <= 1) return null;
+                        return (
+                          <div className="flex items-center gap-0.5 ml-1 bg-white border border-indigo-200 rounded p-0.5 shadow-2xs">
+                            <button
+                              type="button"
+                              disabled={isFirst}
+                              onClick={() => onMoveParent(apId, 'up')}
+                              className={`p-0.5 rounded transition ${
+                                isFirst
+                                  ? 'text-slate-300 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-900 hover:bg-purple-100 cursor-pointer'
+                              }`}
+                              title={isFirst ? '해당 섹션의 첫 번째 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
+                            >
+                              <ChevronUp className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isLast}
+                              onClick={() => onMoveParent(apId, 'down')}
+                              className={`p-0.5 rounded transition ${
+                                isLast
+                                  ? 'text-slate-300 cursor-not-allowed'
+                                  : 'text-purple-600 hover:text-purple-900 hover:bg-purple-100 cursor-pointer'
+                              }`}
+                              title={isLast ? '해당 섹션의 마지막 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
+                            >
+                              <ChevronDown className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-slate-600 font-mono">
                       <span>
@@ -2580,6 +2700,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           isOpen={isAddParentModalOpen}
           onClose={() => setIsAddParentModalOpen(false)}
           sections={parentSections}
+          parentChunks={parentChunks}
           defaultSectionId={targetSectionIdForAddParent || selectedSectionId}
           onAddParent={onAddParent}
         />

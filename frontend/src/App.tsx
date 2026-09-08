@@ -31,6 +31,7 @@ import {
   getNextParentChunkId,
   generateDocId,
   reindexEtlData,
+  syncHierarchyOrder,
   estimateKoreanTokens,
 } from './utils/idUtils';
 import { syncChunkPageMetadata } from './utils/pageUtils';
@@ -40,6 +41,7 @@ import type {
   ChildChunk,
   ParentChunk,
   SectionNode,
+  ParentInsertPosition,
   JobStatusResponse,
 } from './types';
 
@@ -1265,13 +1267,14 @@ export function App() {
     );
   };
 
-  // 10-1. Add Parent Chunk Handler (with Initial Child Chunk)
+  // 10-1. Add Parent Chunk Handler (with Initial Child Chunk & Insertion Position)
   const handleAddParent = (data: {
     sectionId: string;
     title: string;
     pageNumber: number;
     initialChildText: string;
     chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+    insertPosition?: ParentInsertPosition;
   }) => {
     if (!etlData) return;
     const sections = etlData.sections || etlData.parent_sections || [];
@@ -1320,7 +1323,7 @@ export function App() {
       is_edited: true,
     };
 
-    // 3) Section 갱신: parent_chunk_ids 및 child_chunk_ids 추가, page_range 확장
+    // 3) Section 갱신: parent_chunk_ids 삽입 위치 반영, page_range 확장
     const updatedSections = sections.map((sec) => {
       if (sec.id === data.sectionId) {
         const pRange = sec.page_range || [data.pageNumber, data.pageNumber];
@@ -1328,10 +1331,31 @@ export function App() {
           Math.min(pRange[0], data.pageNumber),
           Math.max(pRange[1], data.pageNumber),
         ];
+
+        const oldParentIds = [...(sec.parent_chunk_ids || [])];
+        const pos = data.insertPosition || { type: 'end' };
+        let newParentIds: string[];
+
+        if (pos.type === 'start') {
+          newParentIds = [newParentId, ...oldParentIds];
+        } else if (pos.type === 'after' && pos.parentId) {
+          const afterIdx = oldParentIds.indexOf(pos.parentId);
+          if (afterIdx !== -1) {
+            newParentIds = [
+              ...oldParentIds.slice(0, afterIdx + 1),
+              newParentId,
+              ...oldParentIds.slice(afterIdx + 1),
+            ];
+          } else {
+            newParentIds = [...oldParentIds, newParentId];
+          }
+        } else {
+          newParentIds = [...oldParentIds, newParentId];
+        }
+
         return {
           ...sec,
-          parent_chunk_ids: [...(sec.parent_chunk_ids || []), newParentId],
-          child_chunk_ids: [...(sec.child_chunk_ids || []), newChildId],
+          parent_chunk_ids: newParentIds,
           page_range: newPageRange,
         };
       }
@@ -1361,18 +1385,92 @@ export function App() {
       total_words: totalWords,
     };
 
-    setEtlData({
+    // 4) syncHierarchyOrder를 통해 전체 parent_chunks, child_chunks 및 sec.child_chunk_ids를 위치에 맞게 일괄 동기화
+    const intermediateEtl = {
       ...etlData,
       parent_chunks: updatedParents,
       child_chunks: updatedChildren,
       sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
-    });
+    };
+    const syncedEtl = syncHierarchyOrder(intermediateEtl);
+
+    setEtlData(syncedEtl);
     setIsDirty(true);
     setSelectedSectionId(data.sectionId);
     setSelectedParentChunkId(newParentId);
-    showToast(`새 Parent '${data.title}' 및 Child 청크가 성공적으로 생성되었습니다.`);
+    showToast(`새 Parent '${data.title}' 및 Child 청크가 지정한 위치에 성공적으로 생성되었습니다.`);
+  };
+
+  // 10-1b. Move Parent Chunk Order Handler (Swap with adjacent parent in same section)
+  const handleMoveParent = (parentChunkId: string, direction: 'up' | 'down') => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const parentChunks = etlData.parent_chunks || [];
+
+    const targetParent = parentChunks.find(
+      (p) => p.parent_chunk_id === parentChunkId || p.id === parentChunkId
+    );
+    if (!targetParent) {
+      showToast(`대상 Parent 청크(${parentChunkId})를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const targetSection = sections.find((s) => s.id === targetParent.section_id);
+    if (!targetSection) {
+      showToast(`소속 섹션을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const secParentIds = targetSection.parent_chunk_ids && targetSection.parent_chunk_ids.length > 0
+      ? [...targetSection.parent_chunk_ids]
+      : parentChunks
+          .filter((p) => p.section_id === targetParent.section_id)
+          .map((p) => p.parent_chunk_id || p.id || '');
+
+    const currIdx = secParentIds.indexOf(parentChunkId);
+    if (currIdx === -1) {
+      showToast(`섹션 내에서 Parent 청크를 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    const swapIdx = direction === 'up' ? currIdx - 1 : currIdx + 1;
+    if (swapIdx < 0 || swapIdx >= secParentIds.length) {
+      showToast(
+        direction === 'up' ? '이미 섹션의 가장 첫 번째 항목입니다.' : '이미 섹션의 가장 마지막 항목입니다.'
+      );
+      return;
+    }
+
+    // 인접 항목과 순서 맞바꾸기(Swap)
+    const swappedPid = secParentIds[swapIdx];
+    secParentIds[currIdx] = swappedPid;
+    secParentIds[swapIdx] = parentChunkId;
+
+    // 섹션의 parent_chunk_ids 갱신
+    const updatedSections = sections.map((sec) => {
+      if (sec.id === targetParent.section_id) {
+        return {
+          ...sec,
+          parent_chunk_ids: secParentIds,
+        };
+      }
+      return sec;
+    });
+
+    // 계층 일괄 동기화 (parent_chunks, child_chunks, sec.child_chunk_ids)
+    const syncedEtl = syncHierarchyOrder({
+      ...etlData,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+    });
+
+    setEtlData(syncedEtl);
+    setIsDirty(true);
+    showToast(
+      `Parent '${targetParent.title || parentChunkId}'의 순서가 ${direction === 'up' ? '위' : '아래'}로 변경되었습니다.`
+    );
   };
 
   // 10-2. Add Child Chunk to Parent Handler
@@ -1911,6 +2009,7 @@ export function App() {
               onAddChild={handleAddChild}
               onUpdateParent={handleUpdateParent}
               onDeleteParent={handleDeleteParent}
+              onMoveParent={handleMoveParent}
               onBatchCleanEmptySections={handleBatchCleanEmptySections}
               onToggleIgnoreChunk={handleToggleIgnoreChunk}
               onOpenJsonlModal={setActiveModalChunk}

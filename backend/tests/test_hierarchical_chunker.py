@@ -474,6 +474,85 @@ class TestHierarchicalChunker(unittest.TestCase):
         self.assertEqual(chunk["metadata"]["pages"], [3, 4, 5])
 
 
+    def test_reindex_preserves_parent_reordering(self):
+        """
+        동일 섹션/동일 페이지 내에서 사용자가 Parent 청크의 순서를 수동으로 변경(Move Up/Down)한 경우,
+        Re-index 후에도 사용자가 의도한 순서가 유지되는지 검증합니다.
+        """
+        etl_res = {
+            "doc_id": "reorder_doc",
+            "doc_title": "순서변경테스트",
+            "strategy": "legal",
+            "sections": [
+                {
+                    "id": "d_1111_s01",
+                    "title": "제1장",
+                    "level": 1,
+                    # p02가 p01보다 앞으로 순서 변경됨
+                    "parent_chunk_ids": ["d_1111_p02", "d_1111_p01"],
+                    "child_chunk_ids": ["d_1111_c02", "d_1111_c01"],
+                    "page_range": [2, 2],
+                }
+            ],
+            "parent_chunks": [
+                {
+                    "parent_chunk_id": "d_1111_p02",
+                    "id": "d_1111_p02",
+                    "section_id": "d_1111_s01",
+                    "title": "제2조",
+                    "text": "제2조 내용",
+                    "token_estimate": 15,
+                    "child_chunk_ids": ["d_1111_c02"],
+                    "page_range": [2, 2],
+                },
+                {
+                    "parent_chunk_id": "d_1111_p01",
+                    "id": "d_1111_p01",
+                    "section_id": "d_1111_s01",
+                    "title": "제1조",
+                    "text": "제1조 내용",
+                    "token_estimate": 15,
+                    "child_chunk_ids": ["d_1111_c01"],
+                    "page_range": [2, 2],
+                },
+            ],
+            "child_chunks": [
+                {
+                    "chunk_id": "d_1111_c02",
+                    "parent_chunk_id": "d_1111_p02",
+                    "parent_id": "d_1111_p02",
+                    "section_id": "d_1111_s01",
+                    "chunk_type": "paragraph",
+                    "text": "제2조 내용입니다.",
+                    "page_number": 2,
+                    "breadcrumbs": [],
+                },
+                {
+                    "chunk_id": "d_1111_c01",
+                    "parent_chunk_id": "d_1111_p01",
+                    "parent_id": "d_1111_p01",
+                    "section_id": "d_1111_s01",
+                    "chunk_type": "paragraph",
+                    "text": "제1조 내용입니다.",
+                    "page_number": 2,
+                    "breadcrumbs": [],
+                },
+            ],
+        }
+
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+
+        # 재색인 후에도 제2조(p02 -> p001)가 제1조(p01 -> p002)보다 앞에 위치해야 함
+        self.assertEqual(reindexed["parent_chunks"][0]["title"], "제2조")
+        self.assertEqual(reindexed["parent_chunks"][1]["title"], "제1조")
+        self.assertEqual(reindexed["child_chunks"][0]["text"], "제2조 내용입니다.")
+        self.assertEqual(reindexed["child_chunks"][1]["text"], "제1조 내용입니다.")
+        self.assertEqual(reindexed["sections"][0]["parent_chunk_ids"], [
+            reindexed["parent_chunks"][0]["parent_chunk_id"],
+            reindexed["parent_chunks"][1]["parent_chunk_id"],
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()
 

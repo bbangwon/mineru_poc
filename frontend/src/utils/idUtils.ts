@@ -101,6 +101,106 @@ export function getNextSectionId(sections: SectionNode[], docId: string): string
 }
 
 /**
+ * 3단계 계층(Section -> Parent -> Child)의 순서를 Single Source of Truth 원칙에 따라 일괄 동기화합니다.
+ * 1. sections 순서와 각 section의 parent_chunk_ids 순서에 따라 etl.parent_chunks를 재정렬합니다.
+ * 2. parent_chunks 순서와 각 parent의 child_chunk_ids 순서에 따라 etl.child_chunks를 재정렬합니다.
+ * 3. 각 section의 child_chunk_ids를 소속 Parent들의 child_chunk_ids 순서대로 동기화합니다.
+ */
+export function syncHierarchyOrder(etl: HierarchicalEtlResult): HierarchicalEtlResult {
+  const sections = (etl.sections && etl.sections.length > 0)
+    ? etl.sections
+    : (etl.parent_sections || []);
+  const parentChunks = etl.parent_chunks || [];
+  const childChunks = etl.child_chunks || [];
+
+  const parentMap = new Map<string, ParentChunk>();
+  for (const p of parentChunks) {
+    const pid = p.parent_chunk_id || p.id || '';
+    if (pid) parentMap.set(pid, p);
+  }
+
+  const childMap = new Map<string, ChildChunk>();
+  for (const c of childChunks) {
+    childMap.set(c.chunk_id, c);
+  }
+
+  // 1. 섹션 순서 및 sec.parent_chunk_ids에 따른 parent_chunks 정렬
+  const orderedParents: ParentChunk[] = [];
+  const visitedParentIds = new Set<string>();
+
+  for (const sec of sections) {
+    const pids = sec.parent_chunk_ids || [];
+    for (const pid of pids) {
+      const p = parentMap.get(pid);
+      if (p && !visitedParentIds.has(pid)) {
+        orderedParents.push(p);
+        visitedParentIds.add(pid);
+      }
+    }
+  }
+
+  // 혹시 어떤 섹션에도 명시되지 않은 잔여 Parent 청크 보존
+  for (const p of parentChunks) {
+    const pid = p.parent_chunk_id || p.id || '';
+    if (pid && !visitedParentIds.has(pid)) {
+      orderedParents.push(p);
+      visitedParentIds.add(pid);
+    }
+  }
+
+  // 2. orderedParents 및 p.child_chunk_ids에 따른 child_chunks 정렬
+  const orderedChildren: ChildChunk[] = [];
+  const visitedChildIds = new Set<string>();
+
+  for (const p of orderedParents) {
+    const cids = p.child_chunk_ids || [];
+    for (const cid of cids) {
+      const c = childMap.get(cid);
+      if (c && !visitedChildIds.has(cid)) {
+        orderedChildren.push(c);
+        visitedChildIds.add(cid);
+      }
+    }
+  }
+
+  // 부모에 명시되지 않은 잔여 Child 청크 보존
+  for (const c of childChunks) {
+    if (!visitedChildIds.has(c.chunk_id)) {
+      orderedChildren.push(c);
+      visitedChildIds.add(c.chunk_id);
+    }
+  }
+
+  // 3. 각 섹션의 child_chunk_ids 동기화
+  const updatedSections: SectionNode[] = sections.map((sec) => {
+    const secPids = sec.parent_chunk_ids || [];
+    const secChildIds: string[] = [];
+    for (const pid of secPids) {
+      const p = parentMap.get(pid);
+      if (p && p.child_chunk_ids) {
+        for (const cid of p.child_chunk_ids) {
+          if (!secChildIds.includes(cid)) {
+            secChildIds.push(cid);
+          }
+        }
+      }
+    }
+    return {
+      ...sec,
+      child_chunk_ids: secChildIds.length > 0 ? secChildIds : (sec.child_chunk_ids || []),
+    };
+  });
+
+  return {
+    ...etl,
+    sections: updatedSections,
+    parent_sections: updatedSections,
+    parent_chunks: orderedParents,
+    child_chunks: orderedChildren,
+  };
+}
+
+/**
  * 문서 물리적 등장 순서(Page & Block Position)를 기준으로
  * 3단계 계층(Section - Parent - Child)의 전체 ID를 순차적으로 일괄 재정렬(Re-index)합니다.
  * - Section ID: {doc_id}_s00 (루트), {doc_id}_s01, s02...
@@ -109,13 +209,14 @@ export function getNextSectionId(sections: SectionNode[], docId: string): string
  * - 3단계 간 양방향 참조(parent_section_id, parent_chunk_ids, child_chunk_ids, section_id 등) 일괄 동기화
  */
 export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResult {
-  const docId = etl.doc_id || generateDocId(etl.doc_title);
+  const synchronizedEtl = syncHierarchyOrder(etl);
+  const docId = synchronizedEtl.doc_id || generateDocId(synchronizedEtl.doc_title);
 
-  const rawSections = (etl.sections && etl.sections.length > 0)
-    ? etl.sections
-    : (etl.parent_sections || []);
-  const rawParents = etl.parent_chunks || [];
-  const rawChildren = etl.child_chunks || [];
+  const rawSections = (synchronizedEtl.sections && synchronizedEtl.sections.length > 0)
+    ? synchronizedEtl.sections
+    : (synchronizedEtl.parent_sections || []);
+  const rawParents = synchronizedEtl.parent_chunks || [];
+  const rawChildren = synchronizedEtl.child_chunks || [];
 
   // 1. 물리적 페이지 순서 기반 정렬 (안정 정렬)
   let rootSec: SectionNode | null = null;

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { X, Layers, HelpCircle, FileText, BookOpen, AlertCircle } from 'lucide-react';
-import type { SectionNode } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Layers, HelpCircle, FileText, BookOpen, AlertCircle, ArrowDownUp } from 'lucide-react';
+import type { SectionNode, ParentChunk, ParentInsertPosition } from '../types';
 
 interface AddParentModalProps {
   isOpen: boolean;
   onClose: () => void;
   sections: SectionNode[];
+  parentChunks?: ParentChunk[];
   defaultSectionId?: string | null;
   onAddParent: (data: {
     sectionId: string;
@@ -13,6 +14,7 @@ interface AddParentModalProps {
     pageNumber: number;
     initialChildText: string;
     chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+    insertPosition?: ParentInsertPosition;
   }) => void;
 }
 
@@ -20,15 +22,36 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
   isOpen,
   onClose,
   sections,
+  parentChunks = [],
   defaultSectionId,
   onAddParent,
 }) => {
   const [sectionId, setSectionId] = useState<string>('');
+  const [positionType, setPositionType] = useState<'end' | 'start' | 'after'>('end');
+  const [afterParentId, setAfterParentId] = useState<string>('');
   const [title, setTitle] = useState<string>('');
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [chunkType, setChunkType] = useState<'paragraph' | 'article_clause' | 'table'>('paragraph');
   const [childText, setChildText] = useState<string>('');
   const [error, setError] = useState<string>('');
+
+  // 현재 선택된 섹션에 속한 기존 Parent 목록 (섹션의 parent_chunk_ids 순서 유지)
+  const existingParentsForSection = useMemo(() => {
+    if (!sectionId) return [];
+    const sec = sections.find((s) => s.id === sectionId);
+    const pMap = new Map<string, ParentChunk>();
+    parentChunks.forEach((p) => {
+      const pid = p.parent_chunk_id || p.id || '';
+      if (pid) pMap.set(pid, p);
+    });
+
+    if (sec?.parent_chunk_ids && sec.parent_chunk_ids.length > 0) {
+      return sec.parent_chunk_ids
+        .map((pid) => pMap.get(pid))
+        .filter((p): p is ParentChunk => Boolean(p));
+    }
+    return parentChunks.filter((p) => p.section_id === sectionId);
+  }, [sectionId, sections, parentChunks]);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,6 +64,8 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
       const foundSec = sections.find((s) => s.id === initialSec);
       const defaultPage = foundSec?.page_range?.[0] || 1;
 
+      setPositionType('end');
+      setAfterParentId('');
       setTitle('');
       setPageNumber(defaultPage);
       setChunkType('paragraph');
@@ -48,6 +73,14 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
       setError('');
     }
   }, [isOpen, defaultSectionId, sections]);
+
+  // 섹션 내 Parent 목록이 바뀔 때 afterParentId 초기값 설정
+  useEffect(() => {
+    if (existingParentsForSection.length > 0 && !afterParentId) {
+      const lastP = existingParentsForSection[existingParentsForSection.length - 1];
+      setAfterParentId(lastP.parent_chunk_id || lastP.id || '');
+    }
+  }, [existingParentsForSection, afterParentId]);
 
   if (!isOpen) return null;
 
@@ -73,12 +106,20 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
       return;
     }
 
+    let insertPosition: ParentInsertPosition = { type: 'end' };
+    if (positionType === 'start') {
+      insertPosition = { type: 'start' };
+    } else if (positionType === 'after' && afterParentId) {
+      insertPosition = { type: 'after', parentId: afterParentId };
+    }
+
     onAddParent({
       sectionId,
       title: trimmedTitle,
       pageNumber,
       initialChildText: trimmedText,
       chunkType,
+      insertPosition,
     });
 
     onClose();
@@ -148,6 +189,91 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Insertion Position */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block font-semibold text-slate-700 flex items-center gap-1">
+                <ArrowDownUp className="w-3.5 h-3.5 text-purple-600" />
+                <span>추가 위치 (순서)</span>
+              </label>
+              {existingParentsForSection.length > 0 && (
+                <span className="text-[11px] text-purple-600 font-medium">
+                  현재 섹션에 {existingParentsForSection.length}개 부모 존재
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setPositionType('end')}
+                className={`py-2 px-2 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  positionType === 'end'
+                    ? 'bg-purple-100 border-purple-500 text-purple-900 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                맨 뒤에 추가 (기본)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPositionType('start')}
+                className={`py-2 px-2 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  positionType === 'start'
+                    ? 'bg-purple-100 border-purple-500 text-purple-900 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                맨 처음에 추가
+              </button>
+              <button
+                type="button"
+                disabled={existingParentsForSection.length === 0}
+                onClick={() => setPositionType('after')}
+                className={`py-2 px-2 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  existingParentsForSection.length === 0
+                    ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
+                    : positionType === 'after'
+                    ? 'bg-purple-100 border-purple-500 text-purple-900 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                특정 Parent 다음
+              </button>
+            </div>
+
+            {positionType === 'after' && existingParentsForSection.length > 0 && (
+              <div className="pt-1.5 animate-in fade-in duration-150">
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                  어느 Parent 바로 뒤에 삽입할까요?
+                </label>
+                <select
+                  value={afterParentId}
+                  onChange={(e) => {
+                    const newAfterId = e.target.value;
+                    setAfterParentId(newAfterId);
+                    const refP = existingParentsForSection.find(
+                      (p) => (p.parent_chunk_id || p.id) === newAfterId
+                    );
+                    if (refP?.page_range?.[0]) {
+                      setPageNumber(refP.page_range[0]);
+                    }
+                  }}
+                  className="w-full bg-purple-50/70 border border-purple-300 rounded-xl px-3 py-2 text-purple-950 font-medium text-xs focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                >
+                  {existingParentsForSection.map((p, idx) => {
+                    const pid = p.parent_chunk_id || p.id || '';
+                    const shortId = pid.includes('_p') ? 'P' + pid.split('_p')[1] : pid;
+                    return (
+                      <option key={pid} value={pid}>
+                        [{idx + 1}] [{shortId}] {p.title || (p.text ? p.text.trim().split('\n')[0].slice(0, 30) : '부모 문맥')}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Parent Title & Page Number */}

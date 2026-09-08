@@ -35,6 +35,11 @@ export interface ParentChunk {
   is_edited?: boolean;
 }
 
+export type ParentInsertPosition =
+  | { type: 'end' }
+  | { type: 'start' }
+  | { type: 'after'; parentId: string };
+
 // 3. Child Chunk (검색 / 미시 계층, ~512 tokens or Atomic Table)
 export interface ChildChunk {
   chunk_id: string;                // 예: "d_xxxx_c001"

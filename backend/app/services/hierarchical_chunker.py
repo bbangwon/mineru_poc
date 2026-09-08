@@ -1139,6 +1139,39 @@ class HierarchicalChunker:
         raw_parents = res.get("parent_chunks", [])
         raw_children = res.get("child_chunks", [])
 
+        # 0. 계층 순서 사전 동기화 (섹션 내 parent_chunk_ids 및 부모 내 child_chunk_ids 순서 반영)
+        parent_dict = {p.get("parent_chunk_id") or p.get("id"): p for p in raw_parents}
+        child_dict = {c.get("chunk_id"): c for c in raw_children}
+
+        synced_parents = []
+        visited_pids = set()
+        for sec in raw_sections:
+            for pid in sec.get("parent_chunk_ids", []):
+                if pid in parent_dict and pid not in visited_pids:
+                    synced_parents.append(parent_dict[pid])
+                    visited_pids.add(pid)
+        for p in raw_parents:
+            pid = p.get("parent_chunk_id") or p.get("id")
+            if pid not in visited_pids:
+                synced_parents.append(p)
+                visited_pids.add(pid)
+
+        synced_children = []
+        visited_cids = set()
+        for p in synced_parents:
+            for cid in p.get("child_chunk_ids", []):
+                if cid in child_dict and cid not in visited_cids:
+                    synced_children.append(child_dict[cid])
+                    visited_cids.add(cid)
+        for c in raw_children:
+            cid = c.get("chunk_id")
+            if cid not in visited_cids:
+                synced_children.append(c)
+                visited_cids.add(cid)
+
+        raw_parents = synced_parents
+        raw_children = synced_children
+
         # 1. 물리적 페이지 순서 기반 정렬 (안정 정렬)
         root_sec = None
         normal_sections = []
