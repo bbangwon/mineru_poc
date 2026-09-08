@@ -128,6 +128,16 @@
               </select>
             </div>
 
+            <!-- Method Select (Auto / OCR / Txt) -->
+            <div class="flex items-center gap-1.5 text-xs text-slate-600">
+              <span class="font-medium text-slate-500">추출 방식:</span>
+              <select id="etlMethod" class="text-xs bg-slate-50 border border-slate-300 rounded px-2 py-1" title="CMap 결함으로 숫자나 괄호가 누락될 경우 OCR 모드를 선택하세요">
+                <option value="auto" selected>Auto (자동 판별)</option>
+                <option value="ocr">OCR (강제 OCR - 숫자/괄호 보존)</option>
+                <option value="txt">Txt (디지털 텍스트 직접 추출)</option>
+              </select>
+            </div>
+
             <!-- All Pages Toggle -->
             <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200 transition">
               <input type="checkbox" id="chkAllPages" onchange="toggleAllPages(this.checked)" checked class="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300">
@@ -632,6 +642,7 @@
       const start = document.getElementById('etlStartPage').value;
       const end = document.getElementById('etlEndPage').value;
       const backend = document.getElementById('etlBackend').value;
+      const method = document.getElementById('etlMethod') ? document.getElementById('etlMethod').value : 'auto';
 
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 파싱 및 청킹 중...';
@@ -646,6 +657,7 @@
             start_page: allPages ? null : parseInt(start),
             end_page: allPages ? null : parseInt(end),
             backend: backend,
+            method: method,
             lang: 'korean'
           })
         });

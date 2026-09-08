@@ -81,6 +81,30 @@ export const ControllerBar: React.FC<ControllerBarProps> = ({
               <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[11px] font-mono font-semibold">
                 {totalPages} Pages
               </span>
+              {currentItem?.method && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded border font-semibold ${
+                    currentItem.method === 'ocr'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : currentItem.method === 'txt'
+                      ? 'bg-slate-50 text-slate-700 border-slate-200'
+                      : 'bg-sky-50 text-sky-700 border-sky-200'
+                  }`}
+                >
+                  {currentItem.method === 'ocr' ? 'OCR' : currentItem.method === 'txt' ? 'Txt' : 'Auto'}
+                </span>
+              )}
+              {currentItem?.strategy && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded border font-semibold ${
+                    currentItem.strategy === 'legal'
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {currentItem.strategy === 'legal' ? '⚖️ 법률계층' : '일반문서'}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <select

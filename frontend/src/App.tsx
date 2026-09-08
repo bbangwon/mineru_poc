@@ -75,8 +75,8 @@ export function App() {
   const [isUploading, setIsUploading] = useState(false);
 
   const [engine, setEngine] = useState('pipeline');
-  const method = 'auto';
-  const formula = true;
+  const [method, setMethod] = useState('auto');
+  const [formula, setFormula] = useState(true);
   const [strategy, setStrategy] = useState<string>('general');
   const [allPages, setAllPages] = useState(true);
   const [startPage, setStartPage] = useState(0);
@@ -1962,6 +1962,10 @@ export function App() {
             onOpenQdrantModal={() => setIsQdrantConfigOpen(true)}
             engine={engine}
             setEngine={setEngine}
+            method={method}
+            setMethod={setMethod}
+            formula={formula}
+            setFormula={setFormula}
             strategy={strategy}
             setStrategy={setStrategy}
             allPages={allPages}

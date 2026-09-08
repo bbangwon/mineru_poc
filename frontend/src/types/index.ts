@@ -13,6 +13,9 @@ export interface PdfItem {
   is_current: boolean;
   mtime?: number;
   etl_status?: 'not_started' | 'running' | 'completed' | 'failed';
+  backend?: string;
+  method?: string;
+  strategy?: string;
   has_saved_edit?: boolean;
   is_embedded?: boolean;
   active_job?: {

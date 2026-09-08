@@ -39,6 +39,10 @@ interface DashboardOverviewProps {
   // Parser settings pass-through
   engine: string;
   setEngine: (v: string) => void;
+  method: string;
+  setMethod: (v: string) => void;
+  formula: boolean;
+  setFormula: (v: boolean) => void;
   strategy: string;
   setStrategy: (v: string) => void;
   allPages: boolean;
@@ -65,6 +69,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onOpenQdrantModal,
   engine,
   setEngine,
+  method,
+  setMethod,
+  formula,
+  setFormula,
   strategy,
   setStrategy,
   allPages,
@@ -233,7 +241,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <span className="text-[11px] text-slate-500">각 문서의 'ETL 실행' 버튼 클릭 시 적용됩니다</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            {/* 1. Engine */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">MinerU 엔진</label>
               <select
@@ -242,10 +251,39 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-medium"
               >
                 <option value="pipeline">Pipeline (MLX / 고속 파이프라인)</option>
-                <option value="vlm">VLM (Vision-Language Model)</option>
+                <option value="hybrid-engine">Hybrid-Engine (VLM 레이아웃)</option>
               </select>
             </div>
 
+            {/* 2. Extraction Method (Auto / OCR / Txt) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  추출 방식 (OCR 모드)
+                </label>
+                {method === 'ocr' && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
+                    강제 OCR 활성
+                  </span>
+                )}
+              </div>
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                className={`w-full border rounded-xl px-3 py-2 focus:outline-none font-medium transition-colors ${
+                  method === 'ocr'
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200 font-semibold focus:border-amber-500'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:border-indigo-500'
+                }`}
+                title="CMap 결함으로 숫자나 괄호가 누락될 경우 'OCR' 모드를 선택하세요"
+              >
+                <option value="auto">Auto (자동 판별 - 일반 디지털 PDF)</option>
+                <option value="ocr">OCR (강제 광학 인식 - 숫자/괄호/표 보존)</option>
+                <option value="txt">Txt (순수 텍스트 레이어 직접 추출)</option>
+              </select>
+            </div>
+
+            {/* 3. Chunking Strategy */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">청킹 전략 (Strategy)</label>
               <select
@@ -254,15 +292,34 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-medium"
               >
                 <option value="general">일반 문서 (General Markdown/Structure)</option>
-                <option value="legal">규정 및 법률 문서 (조/항/호 계층 파싱)</option>
+                <option value="legal">⚖️ 규정 및 법률 문서 (조/항/호 계층 파싱)</option>
                 <option value="report">학술/기술 보고서 (표/수식 집중)</option>
               </select>
             </div>
 
+            {/* 4. Formula Parsing Toggle */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">수식(LaTeX) 파싱</label>
+              <div className="flex items-center gap-2 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formula}
+                    onChange={(e) => setFormula(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700"
+                  />
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    LaTeX 수식 인식 활성화
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* 5. Page Range Mode */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">페이지 범위 모드</label>
-              <div className="flex items-center gap-2 pt-1.5">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="flex items-center gap-2 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={allPages}
@@ -274,6 +331,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             </div>
 
+            {/* 6. Page Range Inputs */}
             {!allPages ? (
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">페이지 범위 (0-indexed)</label>
@@ -541,7 +599,57 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+
+                            {/* 추출 방식 & 청킹 전략 태그 뱃지 */}
+                            {(item.method || item.strategy || item.backend) && (
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {item.method && (
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                      item.method === 'ocr'
+                                        ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                                        : item.method === 'txt'
+                                        ? 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30'
+                                        : 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
+                                    }`}
+                                    title={`MinerU 파싱 방식: ${item.method.toUpperCase()} (${item.backend || 'pipeline'})`}
+                                  >
+                                    {item.method === 'ocr'
+                                      ? 'OCR 강제인식'
+                                      : item.method === 'txt'
+                                      ? 'Txt 직접추출'
+                                      : 'Auto 자동판별'}
+                                  </span>
+                                )}
+
+                                {item.strategy && (
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                      item.strategy === 'legal'
+                                        ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30'
+                                        : item.strategy === 'report'
+                                        ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30'
+                                        : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                                    }`}
+                                    title={`청킹 전략: ${item.strategy}`}
+                                  >
+                                    {item.strategy === 'legal'
+                                      ? '⚖️ 조문 계층(법률)'
+                                      : item.strategy === 'report'
+                                      ? '기술/수식 보고서'
+                                      : '일반 문서'}
+                                  </span>
+                                )}
+
+                                {item.backend && item.backend !== 'pipeline' && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30 font-medium">
+                                    {item.backend}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                               <span>{formatBytes(item.size_bytes)}</span>
                               <span>•</span>
                               <span>{item.total_pages} 페이지</span>

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -152,11 +153,18 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
                     except Exception:
                         pass
 
+        etl_res["backend"] = backend
+        etl_res["method"] = method
+        etl_res["strategy"] = strategy
+
         latest_etl_result = etl_res
         current_selected_pdf_name = pdf_path.name
 
         job["status"] = "completed"
         job["progress_msg"] = "파싱 및 청킹 완료"
+        job["backend"] = backend
+        job["method"] = method
+        job["strategy"] = strategy
         job["result"] = etl_res
         job["elapsed_time"] = round(time.time() - start_time, 1)
 
@@ -226,7 +234,22 @@ def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Option
         return None
 
 
-_doc_stats_cache: Dict[str, tuple[float, dict]] = {}
+def extract_pipeline_meta_from_path(file_path: Path) -> tuple[Optional[str], Optional[str]]:
+    """경로 문자열에서 MinerU backend 및 method 추출 (예: mineru_pipeline_ocr_korean -> pipeline, ocr)"""
+    backend = None
+    method = None
+    for part in file_path.parts:
+        m = re.match(r"^mineru_([a-zA-Z0-9-]+)_([a-zA-Z0-9-]+)_", part)
+        if m:
+            backend = m.group(1)
+            method = m.group(2)
+            break
+    if not method and file_path.parent.name in ["auto", "ocr", "txt"]:
+        method = file_path.parent.name
+    return backend, method
+
+
+_doc_stats_cache: Dict[str, tuple[float, dict, Optional[str], Optional[str], Optional[str]]] = {}
 _embedded_cache_mtime: float = 0
 _embedded_doc_names: set[str] = set()
 
@@ -296,9 +319,16 @@ async def list_pdfs():
                 running_job = j
                 break
 
+        doc_backend = None
+        doc_method = None
+        doc_strategy = None
+
         if running_job:
             etl_status = "running"
             total_running_jobs += 1
+            doc_backend = running_job.get("backend")
+            doc_method = running_job.get("method")
+            doc_strategy = running_job.get("strategy")
             active_job_info = {
                 "task_id": running_job.get("task_id"),
                 "status": running_job.get("status"),
@@ -320,6 +350,12 @@ async def list_pdfs():
             p_dir = c_path.parent
             edited_path = p_dir / "rag_chunks_edited.json"
 
+            b_cand, m_cand = extract_pipeline_meta_from_path(c_path)
+            if b_cand:
+                doc_backend = b_cand
+            if m_cand:
+                doc_method = m_cand
+
             if edited_path.exists():
                 if etl_status != "running":
                     etl_status = "completed"
@@ -329,6 +365,12 @@ async def list_pdfs():
                 cached = _doc_stats_cache.get(str(edited_path))
                 if cached and cached[0] == e_mtime:
                     stats_info = cached[1]
+                    if cached[2]:
+                        doc_backend = cached[2]
+                    if cached[3]:
+                        doc_method = cached[3]
+                    if cached[4]:
+                        doc_strategy = cached[4]
                 else:
                     try:
                         with open(edited_path, "r", encoding="utf-8") as f:
@@ -343,7 +385,13 @@ async def list_pdfs():
                                 "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
                                 "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
                             }
-                            _doc_stats_cache[str(edited_path)] = (e_mtime, stats_info)
+                            if ed_data.get("backend"):
+                                doc_backend = ed_data.get("backend")
+                            if ed_data.get("method"):
+                                doc_method = ed_data.get("method")
+                            if ed_data.get("strategy"):
+                                doc_strategy = ed_data.get("strategy")
+                            _doc_stats_cache[str(edited_path)] = (e_mtime, stats_info, doc_backend, doc_method, doc_strategy)
                     except Exception:
                         pass
             elif c_path.exists():
@@ -360,6 +408,12 @@ async def list_pdfs():
                         "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
                         "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
                     }
+                    if latest_etl_result.get("backend"):
+                        doc_backend = latest_etl_result.get("backend")
+                    if latest_etl_result.get("method"):
+                        doc_method = latest_etl_result.get("method")
+                    if latest_etl_result.get("strategy"):
+                        doc_strategy = latest_etl_result.get("strategy")
 
         if etl_status == "completed" and stats_info is None and content_info:
             c_path, _ = content_info
@@ -368,11 +422,18 @@ async def list_pdfs():
                 cached = _doc_stats_cache.get(str(c_path))
                 if cached and cached[0] == c_mtime:
                     stats_info = cached[1]
+                    if cached[2]:
+                        doc_backend = cached[2]
+                    if cached[3]:
+                        doc_method = cached[3]
+                    if cached[4]:
+                        doc_strategy = cached[4]
                 else:
                     chunker = HierarchicalChunker(doc_id=stem)
                     with open(c_path, "r", encoding="utf-8") as f:
                         c_data = json.load(f)
-                    temp_res = chunker.chunk_content_list(c_data, doc_title=stem)
+                    strat_guess = "legal" if any(k in stem for k in ["규정", "지침", "기준", "법률", "조례", "훈령", "전문"]) else "general"
+                    temp_res = chunker.chunk_content_list(c_data, doc_title=stem, strategy=strat_guess)
                     childs = temp_res.get("child_chunks", [])
                     parents = temp_res.get("parent_chunks", [])
                     secs = temp_res.get("sections", [])
@@ -383,9 +444,19 @@ async def list_pdfs():
                         "tables_count": sum(1 for c in childs if c.get("chunk_type") == "table" or c.get("is_table")),
                         "estimated_tokens": sum(c.get("token_estimate", 0) for c in childs),
                     }
-                    _doc_stats_cache[str(c_path)] = (c_mtime, stats_info)
+                    if not doc_strategy:
+                        doc_strategy = temp_res.get("strategy", strat_guess)
+                    _doc_stats_cache[str(c_path)] = (c_mtime, stats_info, doc_backend, doc_method, doc_strategy)
             except Exception as e:
                 print(f"Failed to auto-compute chunk stats for {stem}: {e}")
+
+        # 파싱 완료되었으나 doc_strategy가 비어 있는 경우 문서명으로 기본 판정
+        if etl_status == "completed" and not doc_strategy:
+            doc_strategy = "legal" if any(k in stem for k in ["규정", "지침", "기준", "법률", "조례", "훈령", "전문"]) else "general"
+        if etl_status == "completed" and not doc_backend:
+            doc_backend = "pipeline"
+        if etl_status == "completed" and not doc_method:
+            doc_method = "auto"
 
         if etl_status == "completed":
             total_parsed_count += 1
@@ -405,6 +476,9 @@ async def list_pdfs():
                 "is_current": (p.name == current_selected_pdf_name),
                 "mtime": mtime,
                 "etl_status": etl_status,
+                "backend": doc_backend,
+                "method": doc_method,
+                "strategy": doc_strategy,
                 "has_saved_edit": has_saved_edit,
                 "is_embedded": is_embedded,
                 "active_job": active_job_info,
@@ -685,6 +759,9 @@ async def run_etl_parse(req: ParseRequest):
     etl_res["elapsed_time"] = parse_res.get("elapsed_time", 0)
     etl_res["active_pdf"] = pdf_path.name
     etl_res["total_pages"] = get_pdf_page_count(pdf_path)
+    etl_res["backend"] = req.backend or "pipeline"
+    etl_res["method"] = method
+    etl_res["strategy"] = chunk_strat
 
     # 표 이미지 경로 보정
     for chunk in etl_res.get("child_chunks", []):
@@ -724,6 +801,8 @@ async def start_etl_job(req: ParseRequest, background_tasks: BackgroundTasks):
         "status": "pending",
         "progress_msg": "태스크가 백그라운드 대기열에 등록되었습니다...",
         "filename": pdf_path.name,
+        "backend": req.backend or "pipeline",
+        "method": req.method or "auto",
         "strategy": req.strategy or "general",
         "created_at": time.time(),
         "elapsed_time": 0,
