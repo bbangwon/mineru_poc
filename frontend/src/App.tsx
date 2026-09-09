@@ -45,6 +45,7 @@ import type {
   SectionNode,
   ParentInsertPosition,
   JobStatusResponse,
+  ParseRequestParams,
 } from './types';
 
 /**
@@ -412,8 +413,42 @@ export function App() {
   };
 
   // 4. Run ETL Pipeline via Asynchronous Background Task
-  const handleRunEtl = async (targetFilename?: string) => {
-    const docToParse = targetFilename || selectedPdf;
+  const handleRunEtl = async (
+    targetOrParams?: string | Partial<ParseRequestParams>,
+    saveAsDefault?: boolean
+  ) => {
+    let docToParse = selectedPdf;
+    let overrideBackend = engine;
+    let overrideMethod = method;
+    let overrideFormula = formula;
+    let overrideStrategy = strategy;
+    let overrideAllPages = allPages;
+    let overrideStartPage: number | null = allPages ? null : startPage;
+    let overrideEndPage: number | null = allPages ? null : endPage;
+
+    if (typeof targetOrParams === 'string') {
+      docToParse = targetOrParams;
+    } else if (targetOrParams && typeof targetOrParams === 'object') {
+      if (targetOrParams.filename) docToParse = targetOrParams.filename;
+      if (targetOrParams.backend !== undefined) overrideBackend = targetOrParams.backend;
+      if (targetOrParams.method !== undefined) overrideMethod = targetOrParams.method;
+      if (targetOrParams.formula !== undefined) overrideFormula = targetOrParams.formula;
+      if (targetOrParams.strategy !== undefined) overrideStrategy = targetOrParams.strategy;
+      if (targetOrParams.all_pages !== undefined) overrideAllPages = targetOrParams.all_pages;
+      if (targetOrParams.start_page !== undefined) overrideStartPage = targetOrParams.start_page;
+      if (targetOrParams.end_page !== undefined) overrideEndPage = targetOrParams.end_page;
+    }
+
+    if (saveAsDefault) {
+      setEngine(overrideBackend);
+      setMethod(overrideMethod);
+      setFormula(overrideFormula);
+      setStrategy(overrideStrategy);
+      setAllPages(overrideAllPages);
+      if (overrideStartPage !== null) setStartPage(overrideStartPage);
+      if (overrideEndPage !== null) setEndPage(overrideEndPage);
+    }
+
     if (!docToParse) {
       showToast('파싱할 PDF 문서를 선택해주세요.', true);
       return;
@@ -427,13 +462,13 @@ export function App() {
     try {
       const res = await startEtlJob({
         filename: docToParse,
-        all_pages: allPages,
-        start_page: allPages ? null : startPage,
-        end_page: allPages ? null : endPage,
-        backend: engine,
-        method: method,
-        formula: formula,
-        strategy: strategy,
+        all_pages: overrideAllPages,
+        start_page: overrideAllPages ? null : overrideStartPage,
+        end_page: overrideAllPages ? null : overrideEndPage,
+        backend: overrideBackend,
+        method: overrideMethod,
+        formula: overrideFormula,
+        strategy: overrideStrategy,
         lang: 'korean',
       });
 

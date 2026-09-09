@@ -23,7 +23,8 @@ import {
   AlertTriangle,
   X,
 } from 'lucide-react';
-import type { PdfItem, GlobalStats, JobStatusResponse } from '../types';
+import type { PdfItem, GlobalStats, JobStatusResponse, ParseRequestParams } from '../types';
+import { RunEtlModal } from './RunEtlModal';
 
 interface DashboardOverviewProps {
   pdfList: PdfItem[];
@@ -34,7 +35,7 @@ interface DashboardOverviewProps {
   onUploadPdf: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   onDropUploadPdf: (file: File) => Promise<void>;
   isUploading: boolean;
-  onRunEtl: (filename?: string) => Promise<void>;
+  onRunEtl: (params?: string | Partial<ParseRequestParams>, saveAsDefault?: boolean) => Promise<void>;
   isParsing: boolean;
   activeJob: JobStatusResponse | null;
   onRefreshList: () => Promise<void>;
@@ -97,6 +98,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [deleteMode, setDeleteMode] = useState<'full' | 'reset'>('full');
   const [deleteVectors, setDeleteVectors] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [etlTargetItem, setEtlTargetItem] = useState<PdfItem | null>(null);
+  const [isEtlModalOpen, setIsEtlModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File size formatter
@@ -214,10 +217,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
                 : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
             }`}
-            title="파싱 엔진 및 기본 파라미터 설정"
+            title="신규 파싱 시 적용될 기본 파라미터 템플릿 설정"
           >
             <Settings2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span>파서 옵션 설정</span>
+            <span>기본 파서 옵션</span>
           </button>
 
           <button
@@ -244,12 +247,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       {/* Parser Settings Panel (Collapsible) */}
       {showSettings && (
         <div className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl p-4 sm:p-5 shadow-md transition-colors animate-in fade-in duration-200">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 font-semibold">
             <span className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
               <SlidersHorizontal className="w-4 h-4" />
-              신규 파싱 기본 옵션 (MinerU Engine & Chunking Strategy)
+              신규 파싱 기본 옵션 (Default Parser Settings)
             </span>
-            <span className="text-[11px] text-slate-500">각 문서의 'ETL 실행' 버튼 클릭 시 적용됩니다</span>
+            <span className="text-[11px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md font-normal">
+              💡 각 문서의 'ETL 실행' 클릭 시 본 설정값이 팝업에 기본으로 채워지며, 실행 전 변경 가능합니다.
+            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
@@ -770,11 +775,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           {/* ETL Parse Button */}
                           <button
                             type="button"
-                            onClick={async () => {
-                              if (item.filename !== selectedPdf) {
-                                await onSelectPdf(item.filename);
-                              }
-                              await onRunEtl(item.filename);
+                            onClick={() => {
+                              setEtlTargetItem(item);
+                              setIsEtlModalOpen(true);
                             }}
                             disabled={isParsing}
                             className={`p-1.5 rounded-xl border transition-all cursor-pointer disabled:opacity-40 shadow-2xs ${
@@ -782,7 +785,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                                 ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
                                 : 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500'
                             }`}
-                            title={item.etl_status === 'completed' ? '재파싱 실행' : 'ETL 파싱 시작'}
+                            title={item.etl_status === 'completed' ? '파싱 옵션 확인 및 재파싱 실행' : '파싱 옵션 확인 및 ETL 파싱 시작'}
                           >
                             <Play className="w-3.5 h-3.5" />
                           </button>
@@ -1012,6 +1015,27 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ETL Execution Confirmation & Parameter Modal */}
+      <RunEtlModal
+        isOpen={isEtlModalOpen}
+        onClose={() => {
+          setIsEtlModalOpen(false);
+          setEtlTargetItem(null);
+        }}
+        targetItem={etlTargetItem}
+        defaultEngine={engine}
+        defaultMethod={method}
+        defaultFormula={formula}
+        defaultStrategy={strategy}
+        defaultAllPages={allPages}
+        defaultStartPage={startPage}
+        defaultEndPage={endPage}
+        onRun={async (params, saveAsDefault) => {
+          await onRunEtl(params, saveAsDefault);
+        }}
+        isParsing={isParsing}
+      />
     </div>
   );
 };
