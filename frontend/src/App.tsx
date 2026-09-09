@@ -280,28 +280,53 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    fetchPdfs();
-    fetchSample();
-    checkActiveTask();
-    getQdrantConfig()
-      .then((cfg) => {
-        if (cfg.collection_name) setQdrantCollection(cfg.collection_name);
-      })
-      .catch(() => {});
-    getParserConfig()
-      .then((cfg) => {
-        if (cfg.backend) setEngine(cfg.backend);
-        if (cfg.method) setMethod(cfg.method);
-        if (cfg.formula !== undefined) setFormula(cfg.formula);
-        if (cfg.strategy) setStrategy(cfg.strategy);
-        if (cfg.all_pages !== undefined) setAllPages(cfg.all_pages);
-        if (cfg.start_page !== undefined) setStartPage(cfg.start_page);
-        if (cfg.end_page !== undefined) setEndPage(cfg.end_page);
-      })
-      .catch((err) => {
-        console.warn('Failed to load default parser config:', err);
-      });
-  }, [fetchPdfs, fetchSample, checkActiveTask]);
+    let isMounted = true;
+
+    const initData = async () => {
+      try {
+        await fetchPdfs();
+      } catch (err) {
+        console.warn('Initial fetchPdfs error:', err);
+      }
+      try {
+        await fetchSample();
+      } catch (err) {
+        console.warn('Initial fetchSample error:', err);
+      }
+      try {
+        await checkActiveTask();
+      } catch (err) {
+        console.warn('Initial checkActiveTask error:', err);
+      }
+
+      getQdrantConfig()
+        .then((cfg) => {
+          if (isMounted && cfg.collection_name) setQdrantCollection(cfg.collection_name);
+        })
+        .catch(() => {});
+
+      getParserConfig()
+        .then((cfg) => {
+          if (!isMounted) return;
+          if (cfg.backend) setEngine(cfg.backend);
+          if (cfg.method) setMethod(cfg.method);
+          if (cfg.formula !== undefined) setFormula(cfg.formula);
+          if (cfg.strategy) setStrategy(cfg.strategy);
+          if (cfg.all_pages !== undefined) setAllPages(cfg.all_pages);
+          if (cfg.start_page !== undefined) setStartPage(cfg.start_page);
+          if (cfg.end_page !== undefined) setEndPage(cfg.end_page);
+        })
+        .catch((err) => {
+          console.warn('Failed to load default parser config:', err);
+        });
+    };
+
+    initData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Run only ONCE on mount!
 
   // Polling loop for active background task
   useEffect(() => {
