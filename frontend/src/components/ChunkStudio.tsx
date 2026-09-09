@@ -394,19 +394,19 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           {isTable ? (
             <Table2
               className={`w-3.5 h-3.5 shrink-0 ${
-                isChildSelected ? 'text-amber-200' : 'text-amber-500'
+                isChildSelected ? 'text-amber-200' : 'text-amber-500 dark:text-amber-400'
               }`}
             />
           ) : isArticle ? (
             <Scale
               className={`w-3.5 h-3.5 shrink-0 ${
-                isChildSelected ? 'text-indigo-200' : 'text-indigo-500'
+                isChildSelected ? 'text-indigo-200' : 'text-indigo-500 dark:text-indigo-400'
               }`}
             />
           ) : (
             <AlignLeft
               className={`w-3.5 h-3.5 shrink-0 ${
-                isChildSelected ? 'text-indigo-200' : 'text-slate-400'
+                isChildSelected ? 'text-indigo-200' : 'text-slate-400 dark:text-slate-500'
               }`}
             />
           )}
@@ -414,7 +414,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             className={`font-mono text-[9px] px-1 py-0.2 rounded shrink-0 ${
               isChildSelected
                 ? 'bg-indigo-700/90 text-indigo-100 font-semibold'
-                : 'bg-slate-100 text-slate-500'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
             }`}
           >
             p.{pageNum}
@@ -430,7 +430,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               className={`px-1 py-0.2 rounded font-semibold ${
                 isChildSelected
                   ? 'bg-indigo-700 text-emerald-300'
-                  : 'bg-emerald-100 text-emerald-700'
+                  : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-transparent dark:border-emerald-800'
               }`}
             >
               수정
@@ -441,7 +441,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               className={`px-1 py-0.2 rounded ${
                 isChildSelected
                   ? 'bg-indigo-700 text-rose-300'
-                  : 'bg-rose-50 text-rose-600'
+                  : 'bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border border-transparent dark:border-rose-800'
               }`}
             >
               제외
@@ -449,7 +449,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           )}
           <span
             className={`text-[10px] ${
-              isChildSelected ? 'text-indigo-200 font-bold' : 'text-slate-400'
+              isChildSelected ? 'text-indigo-200 font-bold' : 'text-slate-400 dark:text-slate-500'
             }`}
           >
             {shortId}
@@ -925,9 +925,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
           {/* Empty sections cleanup bar */}
           {emptySectionsCount > 0 && onBatchCleanEmptySections && (
-            <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-200/70 flex items-center justify-between text-[11px] text-amber-800 shrink-0">
+            <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200/70 dark:border-amber-900/60 flex items-center justify-between text-[11px] text-amber-800 dark:text-amber-200 shrink-0">
               <div className="flex items-center gap-1.5 truncate">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="truncate">
                   청크 없는 빈 섹션 <strong>{emptySectionsCount}개</strong>
                 </span>
@@ -935,7 +935,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               <button
                 type="button"
                 onClick={onBatchCleanEmptySections}
-                className="text-[10px] px-1.5 py-0.5 bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold rounded transition shrink-0 cursor-pointer shadow-2xs"
+                className="text-[10px] px-1.5 py-0.5 bg-amber-200/90 hover:bg-amber-300 dark:bg-amber-900 dark:hover:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold rounded transition shrink-0 cursor-pointer shadow-2xs"
                 title="청크가 없는 모든 빈 섹션 일괄 삭제"
               >
                 일괄 정리
@@ -944,17 +944,17 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           )}
 
           {/* Quick Guide */}
-          <div className="px-3 py-1.5 bg-indigo-50/40 border-b border-indigo-100/60 flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
-            <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+          <div className="px-3 py-1.5 bg-indigo-50/40 dark:bg-indigo-950/40 border-b border-indigo-100/60 dark:border-indigo-900/50 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-indigo-300/80 shrink-0">
+            <Info className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
             <span className="truncate">섹션을 열어 최하위 청크(Child)를 보고 바로 이동할 수 있습니다.</span>
           </div>
 
           {/* Section List */}
           <div className="flex-1 p-2 overflow-y-auto space-y-1 text-xs font-medium">
             {isLoading ? (
-              <div className="text-slate-400 text-center py-16">계층 구조 분석 중...</div>
+              <div className="text-slate-400 dark:text-slate-500 text-center py-16">계층 구조 분석 중...</div>
             ) : filteredSections.length === 0 ? (
-              <div className="text-slate-400 text-center py-16">표시할 섹션이 없습니다.</div>
+              <div className="text-slate-400 dark:text-slate-500 text-center py-16">표시할 섹션이 없습니다.</div>
             ) : (
               filteredSections.map((sec) => {
                 const isRoot = sec.level === 0;
@@ -986,7 +986,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       className={`group py-2 px-2 rounded-lg cursor-pointer flex items-center justify-between transition border-l-3 select-none ${indentClass} ${
                         isActive
                           ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-600 text-indigo-900 dark:text-indigo-200 font-semibold shadow-2xs'
-                          : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
+                          : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       {isEditingThis ? (
@@ -1003,12 +1003,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               if (e.key === 'Escape') cancelEditSection();
                             }}
                             autoFocus
-                            className="flex-1 text-xs bg-white border border-indigo-500 rounded px-2 py-1 font-semibold focus:outline-hidden ring-1 ring-indigo-500 text-slate-900"
+                            className="flex-1 text-xs bg-white dark:bg-slate-800 border border-indigo-500 rounded px-2 py-1 font-semibold focus:outline-hidden ring-1 ring-indigo-500 text-slate-900 dark:text-slate-100"
                           />
                           <button
                             type="button"
                             onClick={() => saveEditSection(sec.id)}
-                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
                             title="저장 (Enter)"
                           >
                             <Check className="w-3.5 h-3.5" />
@@ -1016,7 +1016,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           <button
                             type="button"
                             onClick={cancelEditSection}
-                            className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                            className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
                             title="취소 (Esc)"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -1030,13 +1030,13 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               <button
                                 type="button"
                                 onClick={(e) => toggleExpandSection(sec.id, e)}
-                                className="p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-200/60 transition cursor-pointer shrink-0"
+                                className="p-0.5 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
                                 title={isExpanded ? '하위 청크 접기' : '하위 청크 펼치기'}
                               >
                                 {isExpanded ? (
-                                  <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                                  <ChevronDown className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                                 ) : (
-                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                                 )}
                               </button>
                             ) : (
@@ -1051,7 +1051,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             )}
                             <span
-                              className={`truncate ${isRoot ? 'font-bold text-slate-900' : ''}`}
+                              className={`truncate ${isRoot ? 'font-bold text-slate-900 dark:text-slate-100' : ''}`}
                               title={sec.title}
                             >
                               {sec.title}
@@ -1068,7 +1068,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                   setTargetSectionIdForAddParent(sec.id);
                                   setIsAddParentModalOpen(true);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 text-purple-600 hover:text-purple-800 transition p-0.5 rounded hover:bg-purple-100 cursor-pointer"
+                                className="opacity-0 group-hover:opacity-100 text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200 transition p-0.5 rounded hover:bg-purple-100 dark:hover:bg-purple-950/60 cursor-pointer"
                                 title="이 섹션에 새 Parent 청크 추가"
                               >
                                 <Plus className="w-3 h-3" />
@@ -1079,7 +1079,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             <button
                               type="button"
                               onClick={(e) => startEditSection(sec, e)}
-                              className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition p-0.5 rounded hover:bg-slate-200/50 cursor-pointer"
+                              className="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition p-0.5 rounded hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer"
                               title="섹션 제목 수정"
                             >
                               <Edit2 className="w-3 h-3" />
@@ -1095,10 +1095,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 <button
                                   type="button"
                                   onClick={(e) => handleDeleteSectionClick(sec, e)}
-                                  className={`transition p-0.5 rounded hover:bg-rose-50 cursor-pointer ${
+                                  className={`transition p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/60 cursor-pointer ${
                                     isLeafEmpty
                                       ? 'opacity-80 text-amber-500 hover:text-rose-600'
-                                      : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600'
+                                      : 'opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400'
                                   }`}
                                   title={
                                     isLeafEmpty
@@ -1130,7 +1130,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 <div className="flex items-center gap-1 font-mono text-[10px]">
                                   {isLeafEmpty ? (
                                     <span
-                                      className="bg-amber-100 text-amber-800 font-semibold border border-amber-200 px-1.5 py-0.5 rounded"
+                                      className="bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 font-semibold border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded"
                                       title="청크와 하위 섹션이 없는 빈 섹션"
                                     >
                                       빈 섹션
@@ -1140,8 +1140,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                       <span
                                         className={`px-1.5 py-0.5 rounded font-semibold ${
                                           isActive
-                                            ? 'bg-indigo-200 text-indigo-950 font-bold'
-                                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200/70'
+                                            ? 'bg-indigo-200 dark:bg-indigo-900 text-indigo-950 dark:text-indigo-200 font-bold'
+                                            : 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800'
                                         }`}
                                         title={`소속 Parent 청크: ${pCount}개`}
                                       >
@@ -1150,8 +1150,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                       <span
                                         className={`px-1.5 py-0.5 rounded ${
                                           isActive
-                                            ? 'bg-indigo-300/70 text-indigo-950 font-bold'
-                                            : 'bg-slate-100 text-slate-600'
+                                            ? 'bg-indigo-300/70 dark:bg-indigo-800 text-indigo-950 dark:text-indigo-100 font-bold'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                         }`}
                                         title={`소속 Child 청크: ${cCount}개`}
                                       >
@@ -1170,7 +1170,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     {/* Expanded Sub-Tree: 3-Tier Hierarchy (Parent Chunks -> Child Chunks) */}
                     {isExpanded && hasChildren && (
                       <div
-                        className={`border-l-2 border-indigo-200/70 space-y-1 my-1 transition-all ${
+                        className={`border-l-2 border-indigo-200/70 dark:border-indigo-900/60 space-y-1 my-1 transition-all ${
                           sec.level === 0
                             ? 'ml-4 pl-1.5'
                             : sec.level === 1
@@ -1230,13 +1230,13 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                             <button
                                               type="button"
                                               onClick={(e) => toggleExpandParent(pid, e)}
-                                              className="p-0.5 text-slate-400 hover:text-purple-600 rounded hover:bg-purple-100 transition cursor-pointer shrink-0"
+                                              className="p-0.5 text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 rounded hover:bg-purple-100 dark:hover:bg-purple-950/60 transition cursor-pointer shrink-0"
                                               title={pExpanded ? '자식 청크 접기' : '자식 청크 펼치기'}
                                             >
                                               {pExpanded ? (
-                                                <ChevronDown className="w-3 h-3 text-purple-600" />
+                                                <ChevronDown className="w-3 h-3 text-purple-600 dark:text-purple-400" />
                                               ) : (
-                                                <ChevronRight className="w-3 h-3 text-slate-400" />
+                                                <ChevronRight className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                                               )}
                                             </button>
                                           ) : (
@@ -1245,10 +1245,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                                           <Layers
                                             className={`w-3.5 h-3.5 shrink-0 ${
-                                              isParentActive ? 'text-purple-600' : 'text-purple-500'
+                                              isParentActive ? 'text-purple-600 dark:text-purple-400' : 'text-purple-500 dark:text-purple-400'
                                             }`}
                                           />
-                                          <span className="font-mono text-[10px] text-purple-700 font-bold shrink-0">
+                                          <span className="font-mono text-[10px] text-purple-700 dark:text-purple-400 font-bold shrink-0">
                                             [{shortPid}]
                                           </span>
                                           <span className="truncate font-medium">
@@ -1272,8 +1272,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                                 }}
                                                 className={`p-0.5 rounded transition ${
                                                   isFirstParent
-                                                    ? 'text-slate-300 cursor-not-allowed'
-                                                    : 'text-purple-600 hover:text-purple-950 hover:bg-purple-100 cursor-pointer'
+                                                    ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                                    : 'text-purple-600 dark:text-purple-400 hover:text-purple-950 dark:hover:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-950/60 cursor-pointer'
                                                 }`}
                                                 title={isFirstParent ? '맨 위 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
                                               >
@@ -1288,8 +1288,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                                 }}
                                                 className={`p-0.5 rounded transition ${
                                                   isLastParent
-                                                    ? 'text-slate-300 cursor-not-allowed'
-                                                    : 'text-purple-600 hover:text-purple-950 hover:bg-purple-100 cursor-pointer'
+                                                    ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                                    : 'text-purple-600 dark:text-purple-400 hover:text-purple-950 dark:hover:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-950/60 cursor-pointer'
                                                 }`}
                                                 title={isLastParent ? '맨 아래 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
                                               >
@@ -1305,7 +1305,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                                 setTargetParentForAddChild(parent);
                                                 setIsAddChildModalOpen(true);
                                               }}
-                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-indigo-600 hover:text-indigo-800 rounded hover:bg-purple-100 transition cursor-pointer"
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 rounded hover:bg-purple-100 dark:hover:bg-purple-950/60 transition cursor-pointer"
                                               title="이 Parent에 새 Child 청크 추가"
                                             >
                                               <Plus className="w-2.5 h-2.5" />
@@ -1319,7 +1319,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                                 setTargetParentForEdit(parent);
                                                 setIsEditParentModalOpen(true);
                                               }}
-                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-purple-100 transition cursor-pointer"
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-purple-100 dark:hover:bg-purple-950/60 transition cursor-pointer"
                                               title="Parent 제목 및 섹션 수정"
                                             >
                                               <Edit2 className="w-2.5 h-2.5" />
@@ -1337,7 +1337,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                                   onDeleteParent(pid);
                                                 }
                                               }}
-                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition cursor-pointer"
+                                              className="opacity-0 group-hover/parent:opacity-100 p-0.5 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-rose-50 dark:hover:bg-rose-950/60 transition cursor-pointer"
                                               title="Parent 및 자식 청크 삭제"
                                             >
                                               <Trash2 className="w-2.5 h-2.5" />
@@ -1347,15 +1347,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                           <span
                                             className={`px-1 py-0.2 rounded ${
                                               (parent.token_estimate || 0) > 2048
-                                                ? 'bg-rose-100 text-rose-700 font-bold'
-                                                : 'bg-slate-100 text-slate-500'
+                                                ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 font-bold'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                                             }`}
                                             title={`토큰: ${parent.token_estimate || 0}T`}
                                           >
                                             {parent.token_estimate || 0}T
                                           </span>
                                           <span
-                                            className="px-1 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200 font-semibold"
+                                            className="px-1 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-semibold"
                                             title={`자식 청크: ${pChildren.length}개`}
                                           >
                                             C {pChildren.length}
@@ -1365,7 +1365,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                                       {/* Level 3: Child Chunks belonging to this Parent */}
                                       {pExpanded && hasPChildren && (
-                                        <div className="ml-3 pl-2 border-l border-purple-200 space-y-0.5 my-0.5">
+                                        <div className="ml-3 pl-2 border-l border-purple-200 dark:border-purple-900/60 space-y-0.5 my-0.5">
                                           {pChildren.map((chunk) =>
                                             renderChildChunkItem(sec.id, chunk)
                                           )}
@@ -1378,10 +1378,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 {/* Unassigned Child Chunks fallback */}
                                 {unassignedChildren.length > 0 && (
                                   <div className="space-y-0.5">
-                                    <div className="py-0.5 px-1.5 text-[10px] text-slate-400 font-medium italic">
+                                    <div className="py-0.5 px-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-medium italic">
                                       기타 / 독립 청크 ({unassignedChildren.length}개)
                                     </div>
-                                    <div className="ml-3 pl-2 border-l border-slate-200 space-y-0.5">
+                                    <div className="ml-3 pl-2 border-l border-slate-200 dark:border-slate-800 space-y-0.5">
                                       {unassignedChildren.map((chunk) =>
                                         renderChildChunkItem(sec.id, chunk)
                                       )}
@@ -1463,7 +1463,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   className={`text-[11px] px-2 py-0.5 rounded font-medium transition cursor-pointer ${
                     typeFilter === 'all'
                       ? 'bg-indigo-600 text-white font-semibold shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   전체
@@ -1474,7 +1474,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   className={`text-[11px] px-2 py-0.5 rounded font-medium transition flex items-center gap-1 cursor-pointer ${
                     typeFilter === 'paragraph'
                       ? 'bg-indigo-600 text-white font-semibold shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   <AlignLeft className="w-3 h-3" />
@@ -1486,7 +1486,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   className={`text-[11px] px-2 py-0.5 rounded font-medium transition flex items-center gap-1 cursor-pointer ${
                     typeFilter === 'table'
                       ? 'bg-indigo-600 text-white font-semibold shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   <Table2 className="w-3 h-3" />
@@ -1498,7 +1498,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   className={`text-[11px] px-2 py-0.5 rounded font-medium transition flex items-center gap-1 cursor-pointer ${
                     typeFilter === 'article'
                       ? 'bg-indigo-600 text-white font-semibold shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   <Scale className="w-3 h-3" />
@@ -1513,8 +1513,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   onClick={() => setStatusFilter(statusFilter === 'edited' ? 'all' : 'edited')}
                   className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer ${
                     statusFilter === 'edited'
-                      ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
-                      : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                      ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                   title="수정된 청크만 보기"
                 >
@@ -1525,8 +1525,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   onClick={() => setStatusFilter(statusFilter === 'ignored' ? 'all' : 'ignored')}
                   className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer ${
                     statusFilter === 'ignored'
-                      ? 'bg-rose-100 text-rose-900 border-rose-300 font-bold'
-                      : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                      ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                   title="제외된 청크만 보기"
                 >
@@ -1539,15 +1539,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     statusFilter === 'linter'
                       ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-2xs'
                       : linterStats.totalWarnings > 0
-                      ? 'border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100'
-                      : 'border-slate-200 text-slate-400 hover:bg-slate-50'
+                      ? 'border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                   title="토큰 초과/부족/공백 청크 필터링"
                 >
                   <AlertTriangle className="w-2.5 h-2.5" />
                   <span>품질경고</span>
                   {linterStats.totalWarnings > 0 && (
-                    <span className="font-mono text-[9px] px-1 rounded bg-amber-200 text-amber-900">
+                    <span className="font-mono text-[9px] px-1 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
                       {linterStats.totalWarnings}
                     </span>
                   )}
@@ -1559,12 +1559,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
                       statusFilter === 'empty'
                         ? 'bg-rose-600 text-white border-rose-700 font-bold shadow-2xs'
-                        : 'border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100'
+                        : 'border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60'
                     }`}
                     title="공백만 있는 빈 청크 보기"
                   >
                     <span>빈 청크</span>
-                    <span className="font-mono text-[9px] px-1 rounded bg-rose-200 text-rose-900">
+                    <span className="font-mono text-[9px] px-1 rounded bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-200">
                       {linterStats.emptyCount}
                     </span>
                   </button>
@@ -1574,10 +1574,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   <button
                     type="button"
                     onClick={onReindexIds}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 font-medium transition cursor-pointer flex items-center gap-1 ml-auto"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-medium transition cursor-pointer flex items-center gap-1 ml-auto"
                     title="전체 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬"
                   >
-                    <ListOrdered className="w-2.5 h-2.5 text-indigo-600" />
+                    <ListOrdered className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
                     <span>ID 재정렬</span>
                   </button>
                 )}
@@ -1587,9 +1587,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
           {/* Empty Chunks Linter Banner */}
           {linterStats.emptyCount > 0 && onBatchCleanEmptyChunks && (
-            <div className="px-3 py-2 bg-rose-50 border-b border-rose-200 flex items-center justify-between text-xs text-rose-900 shrink-0 animate-in fade-in">
+            <div className="px-3 py-2 bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-900 dark:text-rose-200 shrink-0 animate-in fade-in">
               <span className="flex items-center gap-1.5 font-medium">
-                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>공백만 있는 빈 청크 <strong>{linterStats.emptyCount}</strong>개 발견</span>
               </span>
               <button
@@ -1606,23 +1606,23 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
           {/* Multi-Selection Merge Action Bar */}
           {selectedChunkIds.size > 0 && (
-            <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-200 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
+            <div className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 border-b border-indigo-200 dark:border-indigo-800 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-xs text-indigo-950 flex items-center gap-1">
-                  <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="font-bold text-xs text-indigo-950 dark:text-indigo-200 flex items-center gap-1">
+                  <CheckSquare className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                   <span>{selectedChunkIds.size}개 선택됨</span>
                 </span>
                 <button
                   type="button"
                   onClick={clearSelectedChunks}
-                  className="text-[11px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                  className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
                 >
                   해제
                 </button>
                 <button
                   type="button"
                   onClick={selectAllFilteredChunks}
-                  className="text-[11px] text-indigo-700 hover:text-indigo-950 underline cursor-pointer"
+                  className="text-[11px] text-indigo-700 dark:text-indigo-300 hover:text-indigo-950 dark:hover:text-indigo-100 underline cursor-pointer"
                 >
                   현재 목록 전체선택
                 </button>
@@ -1663,9 +1663,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             {isLoading ? (
               <div className="text-slate-400 text-center py-20 text-xs">청크 불러오는 중...</div>
             ) : visibleGroups.length === 0 ? (
-              <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300">
-                <Layers className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
-                <p className="text-xs text-slate-400">조건에 맞는 청크가 없습니다.</p>
+              <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
+                <Layers className="w-7 h-7 text-slate-300 dark:text-slate-600 mx-auto mb-1.5" />
+                <p className="text-xs text-slate-400 dark:text-slate-500">조건에 맞는 청크가 없습니다.</p>
               </div>
             ) : (
               visibleGroups.map((group) => {
@@ -1685,23 +1685,23 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   <div
                     key={pid}
                     id={`parent-box-${pid}`}
-                    className="rounded-xl border border-slate-200/90 bg-slate-100/70 p-2.5 space-y-2 shadow-2xs transition"
+                    className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/70 p-2.5 space-y-2 shadow-2xs transition"
                   >
                     {/* Parent Container Box Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shadow-2xs">
+                        <span className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700/80 shadow-2xs">
                           Parent: {pid}
                         </span>
                         {parent.title && (
-                          <span className="text-xs font-bold text-slate-800 truncate max-w-[170px]" title={parent.title}>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={parent.title}>
                             {parent.title}
                           </span>
                         )}
                         <span className="text-[10px] text-slate-400 font-mono">
                           p.{parent.page_range?.[0] || 1}{parent.page_range?.[1] && parent.page_range[1] > (parent.page_range[0] || 1) ? `~${parent.page_range[1]}` : ''}
                         </span>
-                        <span className="text-[10px] text-slate-500 font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono bg-white dark:bg-slate-800 px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700">
                           자식 {group.children.length}개
                         </span>
                       </div>
@@ -1709,15 +1709,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       <div className="flex items-center gap-2 shrink-0">
                         {/* Parent Order Move Up/Down Buttons */}
                         {onMoveParent && secPids.length > 1 && (
-                          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+                          <div className="flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 shadow-2xs">
                             <button
                               type="button"
                               disabled={isFirstInSec}
                               onClick={() => onMoveParent(pid, 'up')}
                               className={`p-1 rounded transition ${
                                 isFirstInSec
-                                  ? 'text-slate-300 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-950 hover:bg-purple-50 cursor-pointer'
+                                  ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                  : 'text-purple-600 dark:text-purple-400 hover:text-purple-950 dark:hover:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-700 cursor-pointer'
                               }`}
                               title={isFirstInSec ? '해당 섹션의 첫 번째 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
                             >
@@ -1729,8 +1729,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               onClick={() => onMoveParent(pid, 'down')}
                               className={`p-1 rounded transition ${
                                 isLastInSec
-                                  ? 'text-slate-300 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-950 hover:bg-purple-50 cursor-pointer'
+                                  ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                  : 'text-purple-600 dark:text-purple-400 hover:text-purple-950 dark:hover:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-700 cursor-pointer'
                               }`}
                               title={isLastInSec ? '해당 섹션의 마지막 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
                             >
@@ -1741,10 +1741,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                         {/* Fast Section Reassign Dropdown */}
                         <div
-                          className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 shadow-2xs"
+                          className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5 shadow-2xs"
                           title="이 Parent 및 소속 Child 청크의 상위 섹션 빠른 재지정"
                         >
-                          <FolderTree className="w-3 h-3 text-indigo-600 shrink-0" />
+                          <FolderTree className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
                           <select
                             value={parent.section_id}
                             onChange={(e) => {
@@ -1753,10 +1753,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 onReassignParentSection(pid, newSecId);
                               }
                             }}
-                            className="text-[11px] font-medium text-slate-700 bg-transparent focus:outline-hidden cursor-pointer max-w-[130px] truncate"
+                            className="text-[11px] font-medium text-slate-700 dark:text-slate-200 bg-transparent focus:outline-hidden cursor-pointer max-w-[130px] truncate"
                           >
                             {parentSections.map((sec) => (
-                              <option key={sec.id} value={sec.id}>
+                              <option key={sec.id} value={sec.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
                                 {sec.title} (L{sec.level})
                               </option>
                             ))}
@@ -1767,8 +1767,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         <span
                           className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${
                             isParentOver
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : 'bg-white text-slate-600 border border-slate-200'
+                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                           }`}
                           title={`Parent 누적 토큰: ~${pWords} tokens (권장: 2048 이하)`}
                         >
@@ -1799,7 +1799,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               setTargetParentForEdit(parent);
                               setIsEditParentModalOpen(true);
                             }}
-                            className="p-1 text-slate-400 hover:text-indigo-600 bg-white hover:bg-indigo-50 border border-slate-200 rounded-md transition cursor-pointer shadow-2xs"
+                            className="p-1 text-slate-400 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md transition cursor-pointer shadow-2xs"
                             title="Parent 제목 및 섹션 수정"
                           >
                             <Edit2 className="w-3 h-3" />
@@ -1818,7 +1818,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 onDeleteParent(pid);
                               }
                             }}
-                            className="p-1 text-slate-400 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-md transition cursor-pointer shadow-2xs"
+                            className="p-1 text-slate-400 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md transition cursor-pointer shadow-2xs"
                             title="Parent 및 소속 자식 청크 삭제"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1830,8 +1830,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     {/* Child Cards inside Parent Container */}
                     <div className="space-y-2">
                       {group.children.length === 0 ? (
-                        <div className="py-4 text-center border-2 border-dashed border-slate-200 rounded-xl bg-white/60">
-                          <p className="text-xs text-slate-400 mb-1.5 font-medium">소속된 자식 청크가 없습니다.</p>
+                        <div className="py-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white/60 dark:bg-slate-900/40">
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mb-1.5 font-medium">소속된 자식 청크가 없습니다.</p>
                           {onAddChild && (
                             <button
                               type="button"
@@ -1839,7 +1839,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 setTargetParentForAddChild(parent);
                                 setIsAddChildModalOpen(true);
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-semibold transition cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg font-semibold transition cursor-pointer"
                             >
                               <Plus className="w-3.5 h-3.5" />
                               <span>첫 번째 Child 청크 추가</span>
@@ -1867,9 +1867,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             onClick={() => setSelectedChunkId(chunk.chunk_id)}
                             className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
                               isChecked
-                                ? 'bg-indigo-50/50 dark:bg-indigo-950/40 border-indigo-400 ring-2 ring-indigo-400/30 shadow-xs'
+                                ? 'bg-indigo-50/50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-400/30 shadow-xs'
                                 : isSelected
-                                ? 'bg-white dark:bg-slate-850 border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
+                                ? 'bg-indigo-50/40 dark:bg-slate-800 border-indigo-500 ring-2 ring-indigo-500/30 shadow-md'
                                 : isIgnored
                                 ? 'bg-slate-50/70 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 opacity-60 hover:opacity-100 hover:bg-white dark:hover:bg-slate-900'
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-2xs'
@@ -1882,7 +1882,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 <button
                                   type="button"
                                   onClick={(e) => toggleSelectChunk(chunk.chunk_id, e)}
-                                  className="text-slate-400 hover:text-indigo-600 transition p-0.5 rounded cursor-pointer shrink-0"
+                                  className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition p-0.5 rounded cursor-pointer shrink-0"
                                   title={isChecked ? '선택 해제' : '병합 대상으로 선택'}
                                 >
                                   {isChecked ? (
@@ -1904,7 +1904,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                   </span>
                                 ) : (
                                   <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
-                                    <AlignLeft className="w-3 h-3 text-slate-400" />
+                                    <AlignLeft className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                                     문단
                                   </span>
                                 )}
@@ -1918,14 +1918,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 </span>
 
                                 {isEdited && (
-                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                  <span className="bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
                                     <CheckCircle2 className="w-2.5 h-2.5 text-amber-500" />
                                     수정됨
                                   </span>
                                 )}
 
                                 {isIgnored && (
-                                  <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                  <span className="bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
                                     <EyeOff className="w-2.5 h-2.5 text-rose-500" />
                                     제외됨
                                   </span>
@@ -1933,23 +1933,23 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                                 {/* Linter Badges */}
                                 {isCEmpty ? (
-                                  <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                                  <span className="bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-rose-600 dark:text-rose-400" />
                                     빈 청크
                                   </span>
                                 ) : isTable ? (
-                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span className="bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                                     표 원형 보존 상태
                                   </span>
                                 ) : isCOver ? (
-                                  <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                  <span className="bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
                                     512+ tokens
                                   </span>
                                 ) : isCUnder ? (
-                                  <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                                    <Info className="w-2.5 h-2.5 text-sky-600" />
+                                  <span className="bg-sky-50 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-[9px] font-medium px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                    <Info className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" />
                                     &lt;20 tokens
                                   </span>
                                 ) : null}
@@ -1965,8 +1965,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                   }}
                                   className={`p-1 rounded transition cursor-pointer ${
                                     isIgnored
-                                      ? 'text-rose-600 hover:bg-rose-100 bg-rose-50'
-                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                      ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/60 bg-rose-50 dark:bg-rose-950/40'
+                                      : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                                   }`}
                                   title={isIgnored ? '임베딩 포함으로 변경' : '임베딩 제외로 변경'}
                                 >
@@ -1981,7 +1981,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                       e.stopPropagation();
                                       handleDeleteSingleChunk(chunk.chunk_id);
                                     }}
-                                    className="p-1 rounded transition cursor-pointer text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                    className="p-1 rounded transition cursor-pointer text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60"
                                     title="이 청크 즉시 삭제 (확인 후 삭제)"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -1991,14 +1991,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             </div>
 
                             {/* Text Snippet (Line Clamped) */}
-                            <div className="pt-2 text-slate-700 dark:text-slate-300 leading-snug line-clamp-2 text-[11px]">
+                            <div className="pt-2 text-slate-700 dark:text-slate-200 leading-snug line-clamp-2 text-[11px]">
                               {isTable && chunk.table_caption
                                 ? `[표] ${chunk.table_caption}`
                                 : chunk.text || (chunk.raw_html ? 'HTML 표 데이터' : '(빈 청크)')}
                             </div>
 
                             {/* Footer Row: Parent Section & Token count */}
-                            <div className="pt-2 mt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                            <div className="pt-2 mt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-400 font-mono">
                               <span className="truncate max-w-[170px]" title={parentSec?.title || chunk.section_id || chunk.parent_id}>
                                 {parentSec?.title || chunk.section_id || chunk.parent_id}
                               </span>
@@ -2125,14 +2125,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 </div>
 
                 {isTableChunk ? (
-                  <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded font-sans text-[11px] flex items-center gap-1.5 font-semibold">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded font-sans text-[11px] flex items-center gap-1.5 font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     표 원형 보존 상태 (Atomic Table - 512 한도 예외)
                   </span>
                 ) : isOverTokenLimit ? (
                   <div className="flex items-center gap-1.5 font-sans">
-                    <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px] flex items-center gap-1 font-semibold">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-[11px] flex items-center gap-1 font-semibold">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       512 토큰 초과 (분할 권장)
                     </span>
                     {onSplitChunk && activeChunk.chunk_type !== 'table' && (
@@ -2148,13 +2148,13 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     )}
                   </div>
                 ) : isUnderTokenLimit ? (
-                  <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">
-                    <Info className="w-3.5 h-3.5 text-sky-600" />
+                  <span className="text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-2 py-0.5 rounded font-sans text-[11px] flex items-center gap-1 font-medium">
+                    <Info className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                     20 토큰 미만 (2열에서 병합 권장)
                   </span>
                 ) : (
-                  <span className="text-emerald-700 font-sans text-[11px] flex items-center gap-1 font-medium">
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 dark:text-emerald-400 font-sans text-[11px] flex items-center gap-1 font-medium">
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     임베딩 최적 길이
                   </span>
                 )}
@@ -2162,8 +2162,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
               {/* Exclude notice if ignored */}
               {activeChunk.is_ignored && (
-                <div className="px-4 py-2 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs flex items-center gap-2 font-medium shrink-0">
-                  <EyeOff className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="px-4 py-2 bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 font-medium shrink-0">
+                  <EyeOff className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                   <span>이 청크는 RAG Vector DB 임베딩 및 JSONL 다운로드에서 제외됩니다.</span>
                 </div>
               )}
@@ -2172,17 +2172,17 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
               <div className="flex-1 p-4 overflow-y-auto space-y-4">
                 {/* Level 2 Parent Chunk Info Banner */}
                 {activeParentChunk && (
-                  <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-indigo-900 flex items-center gap-1">
-                        <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
+                      <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1">
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>상위 Parent:</span>
                       </span>
-                      <span className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                      <span className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700">
                         {activeParentChunk.parent_chunk_id || activeParentChunk.id}
                       </span>
                       {activeParentChunk.title && (
-                        <span className="text-slate-700 font-medium truncate max-w-xs">
+                        <span className="text-slate-700 dark:text-slate-200 font-medium truncate max-w-xs">
                           · {activeParentChunk.title}
                         </span>
                       )}
@@ -2193,7 +2193,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             setTargetParentForEdit(activeParentChunk);
                             setIsEditParentModalOpen(true);
                           }}
-                          className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-semibold ml-1 cursor-pointer"
+                          className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline flex items-center gap-1 font-semibold ml-1 cursor-pointer"
                           title="Parent 정보 수정"
                         >
                           <Edit2 className="w-2.5 h-2.5" />
@@ -2211,15 +2211,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         const isLast = pIdx === secPids.length - 1 || pIdx === -1;
                         if (secPids.length <= 1) return null;
                         return (
-                          <div className="flex items-center gap-0.5 ml-1 bg-white border border-indigo-200 rounded p-0.5 shadow-2xs">
+                          <div className="flex items-center gap-0.5 ml-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 rounded p-0.5 shadow-2xs">
                             <button
                               type="button"
                               disabled={isFirst}
                               onClick={() => onMoveParent(apId, 'up')}
                               className={`p-0.5 rounded transition ${
                                 isFirst
-                                  ? 'text-slate-300 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-900 hover:bg-purple-100 cursor-pointer'
+                                  ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                  : 'text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900/50 cursor-pointer'
                               }`}
                               title={isFirst ? '해당 섹션의 첫 번째 Parent입니다' : '위로 이동 (순서 맞바꾸기)'}
                             >
@@ -2231,8 +2231,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               onClick={() => onMoveParent(apId, 'down')}
                               className={`p-0.5 rounded transition ${
                                 isLast
-                                  ? 'text-slate-300 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-900 hover:bg-purple-100 cursor-pointer'
+                                  ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                  : 'text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900/50 cursor-pointer'
                               }`}
                               title={isLast ? '해당 섹션의 마지막 Parent입니다' : '아래로 이동 (순서 맞바꾸기)'}
                             >
@@ -2242,15 +2242,15 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         );
                       })()}
                     </div>
-                    <div className="flex items-center gap-3 text-[11px] text-slate-600 font-mono">
+                    <div className="flex items-center gap-3 text-[11px] text-slate-600 dark:text-slate-400 font-mono">
                       <span>
                         소속 자식 청크: <strong>{activeParentChunk.child_chunk_ids?.length || 1}</strong>개
                       </span>
                       <span
                         className={
                           (activeParentChunk.token_estimate || 0) > 2048
-                            ? 'text-amber-700 font-bold'
-                            : 'text-slate-600'
+                            ? 'text-amber-700 dark:text-amber-400 font-bold'
+                            : 'text-slate-600 dark:text-slate-400'
                         }
                       >
                         Parent 토큰: ~{activeParentChunk.token_estimate || 0} tok {(activeParentChunk.token_estimate || 0) > 2048 ? '(비대 알림)' : ''}
@@ -2260,12 +2260,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 )}
                 
                 {/* 1. Parent Section, Page Range & Exclude Setting Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800">
                   {/* Parent Section Reassign */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         소속 섹션 재할당
                       </span>
                       {activeChunk.parent_chunk_id && (
@@ -2285,7 +2285,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           handleFieldChange('parent_id', newSecId);
                         }
                       }}
-                      className="w-full text-xs font-medium bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-xs font-medium bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     >
                       {parentSections.map((sec) => (
                         <option key={sec.id} value={sec.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
@@ -2334,11 +2334,11 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             }
                           }}
                           placeholder="시작"
-                          className="w-full text-xs font-mono font-medium bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          className="w-full text-xs font-mono font-medium bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                           title="시작 페이지 번호"
                         />
                       </div>
-                      <span className="text-slate-400 text-xs font-bold shrink-0">~</span>
+                      <span className="text-slate-400 dark:text-slate-500 text-xs font-bold shrink-0">~</span>
                       <div className="flex-1">
                         <input
                           type="number"
@@ -2375,7 +2375,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             }
                           }}
                           placeholder="끝 (선택)"
-                          className="w-full text-xs font-mono font-medium bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          className="w-full text-xs font-mono font-medium bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                           title="종료 페이지 번호 (선택사항, 단일 페이지는 비움)"
                         />
                       </div>
@@ -2384,7 +2384,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                   {/* Embedding Exclude Toggle */}
                   <div className="flex flex-col justify-end">
-                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900 transition">
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                       <input
                         type="checkbox"
                         checked={Boolean(activeChunk.is_ignored)}
@@ -2406,11 +2406,11 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   {(activeChunk.breadcrumbs || []).length > 0 ? (
                     activeChunk.breadcrumbs.map((b, idx) => (
                       <React.Fragment key={idx}>
-                        <span className={idx === activeChunk.breadcrumbs.length - 1 ? 'font-semibold text-indigo-700' : 'text-slate-500'}>
+                        <span className={idx === activeChunk.breadcrumbs.length - 1 ? 'font-semibold text-indigo-700 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}>
                           {b}
                         </span>
                         {idx < activeChunk.breadcrumbs.length - 1 && (
-                          <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+                          <ChevronRight className="w-3 h-3 text-slate-300 dark:text-slate-600 shrink-0" />
                         )}
                       </React.Fragment>
                     ))
@@ -2473,7 +2473,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           value={activeChunk.table_caption || ''}
                           onChange={(e) => handleFieldChange('table_caption', e.target.value)}
                           placeholder="예: [표 1] 세부기준"
-                          className="w-full text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                          className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                         />
                       </div>
                       <div>
@@ -2483,7 +2483,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           value={activeChunk.table_footnote || ''}
                           onChange={(e) => handleFieldChange('table_footnote', e.target.value)}
                           placeholder="예: ※ 기준치 초과 시 재검사"
-                          className="w-full text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                          className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                         />
                       </div>
                     </div>
@@ -2535,7 +2535,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         </button>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-400">수정 즉시 2열 목록에 반영됩니다.</span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">수정 즉시 2열 목록에 반영됩니다.</span>
                   </div>
 
                   {studioRefineError && (
@@ -2586,7 +2586,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                       <span>임베딩 커스텀 메타데이터 (Custom Metadata Tags)</span>
                     </label>
-                    <span className="text-[10px] text-slate-400">RAG 검색 시 메타 필터링 활용</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">RAG 검색 시 메타 필터링 활용</span>
                   </div>
 
                   {/* Existing Tags */}
@@ -2602,7 +2602,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteMetaTag(key)}
-                            className="text-slate-400 hover:text-rose-600 cursor-pointer ml-0.5"
+                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer ml-0.5"
                             title="태그 삭제"
                           >
                             <X className="w-3 h-3" />
@@ -2610,7 +2610,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         </span>
                       ))
                     ) : (
-                      <span className="text-[11px] text-slate-400 italic">등록된 커스텀 태그가 없습니다.</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">등록된 커스텀 태그가 없습니다.</span>
                     )}
                   </div>
 
@@ -2621,14 +2621,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       value={newMetaKey}
                       onChange={(e) => setNewMetaKey(e.target.value)}
                       placeholder="Key (예: category)"
-                      className="w-1/3 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                      className="w-1/3 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                     />
                     <input
                       type="text"
                       value={newMetaVal}
                       onChange={(e) => setNewMetaVal(e.target.value)}
                       placeholder="Value (예: safety_rules)"
-                      className="flex-1 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                      className="flex-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                     />
                     <button
                       type="button"
