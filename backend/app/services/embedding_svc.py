@@ -2,6 +2,7 @@ import json
 import logging
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -339,8 +340,11 @@ class EmbeddingService:
                     bcs = p.get("breadcrumbs", [])
                     first_bc = str(bcs[0]).strip() if bcs else ""
 
-                    # doc_name과 일치하는 청크 제외
-                    if doc_name in [cid, ctitle, first_bc] or doc_name in str(chunk.get("chunk_id", "")):
+                    # doc_name과 일치하는 청크 제외 (유니코드 NFC 정규화 적용)
+                    norm_doc = unicodedata.normalize("NFC", doc_name) if doc_name else ""
+                    norm_targets = [unicodedata.normalize("NFC", str(x)) for x in [cid, ctitle, first_bc] if x]
+                    norm_chunk_id = unicodedata.normalize("NFC", str(chunk.get("chunk_id", "")))
+                    if norm_doc in norm_targets or norm_doc in norm_chunk_id:
                         json_deleted_count += 1
                         continue
                     filtered_chunks.append(chunk)

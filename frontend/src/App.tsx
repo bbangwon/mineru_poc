@@ -3,6 +3,7 @@ import { useTheme } from './utils/useTheme';
 import { Header } from './components/Header';
 import { SidebarNav } from './components/SidebarNav';
 import type { ActiveTab } from './components/SidebarNav';
+import { FileText, LayoutDashboard, Sparkles } from 'lucide-react';
 import { DashboardOverview } from './components/DashboardOverview';
 import { ChunkStudio } from './components/ChunkStudio';
 import { JsonlModal } from './components/JsonlModal';
@@ -227,15 +228,18 @@ export function App() {
     }
   }, []);
 
-  const fetchSample = useCallback(async () => {
+  const fetchSample = useCallback(async (targetDoc?: string) => {
     setIsLoadingEtl(true);
+    const docToFetch = targetDoc || selectedPdf;
     try {
-      const data = await getEtlSample();
+      const data = await getEtlSample(strategy, docToFetch);
       const normalized = normalizeEtlData(data);
       setEtlData(normalized);
       const firstSec = normalized.sections?.find((s) => (s.child_chunk_ids?.length || 0) > 0) || normalized.sections?.[0];
       if (firstSec) {
         setSelectedSectionId(firstSec.id);
+      } else {
+        setSelectedSectionId(null);
       }
       if (data.active_pdf) {
         setSelectedPdf(data.active_pdf);
@@ -245,10 +249,13 @@ export function App() {
       }
     } catch (err: any) {
       console.warn('ETL 기존 데이터 로드 건너뜀:', err.message);
+      // 대상 문서의 파싱 산출물이 없거나 초기화된 경우, 이전 문서의 데이터가 잔존하지 않도록 확실히 리셋
+      setEtlData(null);
+      setSelectedSectionId(null);
     } finally {
       setIsLoadingEtl(false);
     }
-  }, []);
+  }, [selectedPdf, strategy]);
 
   // Check if there is an active background task running on mount
   const checkActiveTask = useCallback(async () => {
@@ -328,7 +335,7 @@ export function App() {
     }
     try {
       await selectPdf(filename);
-      await fetchSample();
+      await fetchSample(filename);
     } catch (err: any) {
       console.error(err);
       showToast(err.message, true);
@@ -393,7 +400,9 @@ export function App() {
       showToast(res.message || `문서 '${filename}'의 파싱 결과가 초기화되었습니다.`);
       await fetchPdfs();
       if (filename === selectedPdf) {
-        await fetchSample();
+        setEtlData(null);
+        setSelectedSectionId(null);
+        await fetchSample(filename);
       }
     } catch (err: any) {
       console.error('Reset ETL failed:', err);
@@ -2019,32 +2028,71 @@ export function App() {
         ) : activeTab === 'studio' ? (
           /* Chunk Studio Mode: 3-Column Focus IDE Workspace */
           <div className="flex-1 overflow-hidden p-3 sm:p-4 flex flex-col min-h-0">
-            <ChunkStudio
-              parentSections={etlData?.sections || etlData?.parent_sections || []}
-              childChunks={etlData?.child_chunks || []}
-              parentChunks={etlData?.parent_chunks || []}
-              selectedSectionId={selectedSectionId}
-              onSelectSection={setSelectedSectionId}
-              onUpdateChunk={handleUpdateChunk}
-              onUpdateSectionTitle={handleUpdateSectionTitle}
-              onDeleteSection={handleDeleteSection}
-              onAddSection={handleAddSection}
-              onAddParent={handleAddParent}
-              onAddChild={handleAddChild}
-              onUpdateParent={handleUpdateParent}
-              onDeleteParent={handleDeleteParent}
-              onMoveParent={handleMoveParent}
-              onBatchCleanEmptySections={handleBatchCleanEmptySections}
-              onToggleIgnoreChunk={handleToggleIgnoreChunk}
-              onOpenJsonlModal={setActiveModalChunk}
-              onSplitChunk={handleSplitChunk}
-              onMergeChunks={handleMergeChunks}
-              onDeleteChunks={handleDeleteChunks}
-              onReassignParentSection={handleReassignParentSection}
-              onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
-              onReindexIds={handleReindexIds}
-              isLoading={isLoadingEtl}
-            />
+            {!isLoadingEtl && (!etlData || ((!etlData.child_chunks || etlData.child_chunks.length === 0) && (!etlData.sections || etlData.sections.length === 0))) ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4 shadow-xs">
+                  <FileText className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
+                  {selectedPdf ? `'${selectedPdf}' 파싱 산출물이 없습니다` : '선택된 문서가 없습니다'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mb-6 leading-relaxed">
+                  {selectedPdf
+                    ? '파싱 산출물이 초기화되었거나 아직 분석되지 않은 문서입니다. 파싱 대시보드에서 파싱을 실행하여 계층 구조와 청크를 생성해주세요.'
+                    : '파싱 대시보드에서 분석할 PDF 문서를 선택해주세요.'}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('dashboard')}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    <span>대시보드로 이동</span>
+                  </button>
+                  {selectedPdf && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleRunEtl(selectedPdf);
+                        setActiveTab('dashboard');
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>지금 파싱 실행</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ChunkStudio
+                parentSections={etlData?.sections || etlData?.parent_sections || []}
+                childChunks={etlData?.child_chunks || []}
+                parentChunks={etlData?.parent_chunks || []}
+                selectedSectionId={selectedSectionId}
+                onSelectSection={setSelectedSectionId}
+                onUpdateChunk={handleUpdateChunk}
+                onUpdateSectionTitle={handleUpdateSectionTitle}
+                onDeleteSection={handleDeleteSection}
+                onAddSection={handleAddSection}
+                onAddParent={handleAddParent}
+                onAddChild={handleAddChild}
+                onUpdateParent={handleUpdateParent}
+                onDeleteParent={handleDeleteParent}
+                onMoveParent={handleMoveParent}
+                onBatchCleanEmptySections={handleBatchCleanEmptySections}
+                onToggleIgnoreChunk={handleToggleIgnoreChunk}
+                onOpenJsonlModal={setActiveModalChunk}
+                onSplitChunk={handleSplitChunk}
+                onMergeChunks={handleMergeChunks}
+                onDeleteChunks={handleDeleteChunks}
+                onReassignParentSection={handleReassignParentSection}
+                onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
+                onReindexIds={handleReindexIds}
+                isLoading={isLoadingEtl}
+              />
+            )}
           </div>
         ) : (
           /* Hybrid Search Playground Mode */

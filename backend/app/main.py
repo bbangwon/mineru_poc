@@ -4,6 +4,7 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -200,8 +201,13 @@ def get_active_pdf_path() -> Optional[Path]:
     return None
 
 
+def normalize_text(text: Optional[str]) -> str:
+    """macOS APFS(NFD)와 일반 유니코드(NFC) 간 한글 자모 분리 불일치 해결"""
+    return unicodedata.normalize("NFC", text) if text else ""
+
+
 def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Optional[tuple[Path, list]]:
-    """가장 최근에 생성된 MinerU content_list_v2.json 우선 탐색 (preferred_doc_name 우선)"""
+    """가장 최근에 생성된 MinerU content_list_v2.json 탐색 (preferred_doc_name 지정 시 해당 문서의 산출물만 엄격히 검색)"""
     v2_candidates = []
     v1_candidates = []
     if OUTPUT_DIR.exists():
@@ -217,13 +223,21 @@ def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Option
     if not candidates:
         return None
 
-    # preferred_doc_name이 주어지면 파일 경로에 포함된 것 우선 정렬
+    # preferred_doc_name이 주어지면 해당 문서의 산출물만 검색 (다른 문서로의 폴백 금지)
     if preferred_doc_name:
-        stem = Path(preferred_doc_name).stem
-        preferred = [c for c in candidates if stem in str(c[1])]
-        if preferred:
-            preferred.sort(key=lambda x: x[0], reverse=True)
-            candidates = preferred
+        target_stem = normalize_text(Path(preferred_doc_name).stem)
+        matched = []
+        for mtime, p in candidates:
+            norm_parts = [normalize_text(part) for part in p.parts]
+            norm_filename = normalize_text(p.name)
+            # 경로 구성 폴더명에 문서 stem이 있거나, 파일명이 stem_content_list...로 시작하는지 검사
+            if target_stem in norm_parts or norm_filename.startswith(f"{target_stem}_content_list"):
+                matched.append((mtime, p))
+
+        if not matched:
+            # 지정된 문서의 산출물이 없으면 절대로 다른 문서 산출물을 반환하지 않고 None 반환!
+            return None
+        candidates = matched
 
     candidates.sort(key=lambda x: x[0], reverse=True)
     latest_path = candidates[0][1]
@@ -272,10 +286,10 @@ def get_embedded_doc_names() -> set[str]:
                 payload = chunk.get("payload", {})
                 bc = payload.get("breadcrumbs", [])
                 if bc and isinstance(bc, list) and len(bc) > 0:
-                    found_names.add(str(bc[0]).strip())
+                    found_names.add(normalize_text(str(bc[0]).strip()))
                 doc_id = payload.get("doc_id")
                 if doc_id:
-                    found_names.add(str(doc_id).strip())
+                    found_names.add(normalize_text(str(doc_id).strip()))
             _embedded_cache_mtime = current_mtime
             _embedded_doc_names = found_names
             return found_names
@@ -400,7 +414,10 @@ async def list_pdfs():
                     etl_status = "completed"
                 has_saved_edit = False
                 last_modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(c_path.stat().st_mtime))
-                if latest_etl_result and (latest_etl_result.get("active_pdf") == p.name or stem in latest_etl_result.get("doc_title", "")):
+                if latest_etl_result and (
+                    normalize_text(latest_etl_result.get("active_pdf", "")) == normalize_text(p.name)
+                    or normalize_text(stem) in normalize_text(latest_etl_result.get("doc_title", ""))
+                ):
                     childs = latest_etl_result.get("child_chunks", [])
                     stats_info = {
                         "total_chunks": len(childs),
@@ -464,8 +481,9 @@ async def list_pdfs():
             if stats_info:
                 total_chunks_count += stats_info.get("total_chunks", 0)
 
-        # 3. 임베딩 여부 확인
-        is_embedded = (stem in embedded_names) or (p.name in embedded_names)
+        # 3. 임베딩 여부 확인 (유니코드 정규화 비교)
+        norm_embedded = {normalize_text(n) for n in embedded_names}
+        is_embedded = (normalize_text(stem) in norm_embedded) or (normalize_text(p.name) in norm_embedded)
         if is_embedded:
             total_embedded_count += 1
 
@@ -509,7 +527,13 @@ async def select_pdf(req: SelectPdfRequest):
         if extra.exists():
             target = extra
         else:
-            raise HTTPException(status_code=404, detail="PDF file not found")
+            # macOS NFD/NFC 정규화로 한번 더 탐색
+            req_norm = normalize_text(req.filename)
+            matched = [p for p in DOCS_DIR.glob("*.pdf") if normalize_text(p.name) == req_norm]
+            if matched:
+                target = matched[0]
+            else:
+                raise HTTPException(status_code=404, detail="PDF file not found")
     current_selected_pdf_name = req.filename
     pages = get_pdf_page_count(target)
     return {"success": True, "current": req.filename, "total_pages": pages}
@@ -543,20 +567,21 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
     global current_selected_pdf_name, latest_etl_result, latest_content_list_path
     global _embedded_cache_mtime, _doc_stats_cache
 
-    stem = Path(filename).stem
+    stem = normalize_text(Path(filename).stem)
     deleted_folders = []
     deleted_files = []
 
     # 1. 백그라운드 진행 중 태스크 검사
     for j in jobs_db.values():
-        if j.get("filename") == filename and j.get("status") in ["pending", "running"]:
+        job_file = normalize_text(j.get("filename", ""))
+        if job_file == normalize_text(filename) and j.get("status") in ["pending", "running"]:
             raise HTTPException(status_code=400, detail="현재 백그라운드 파싱이 진행 중인 문서는 삭제할 수 없습니다.")
 
-    # 2. 파싱 산출물 디렉터리 탐색 및 삭제
+    # 2. 파싱 산출물 디렉터리 탐색 및 삭제 (유니코드 정규화 비교 필수)
     if OUTPUT_DIR.exists():
         for root, dirs, files in os.walk(OUTPUT_DIR, topdown=False):
             for d in dirs:
-                if d == stem:
+                if normalize_text(d) == stem:
                     target_dir = Path(root) / d
                     try:
                         shutil.rmtree(target_dir, ignore_errors=True)
@@ -574,17 +599,26 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
             print(f"벡터 데이터 삭제 실패 ({stem}): {e}")
 
     # 4. 인메모리 캐시 및 활성 결과 초기화
-    keys_to_remove = [k for k in _doc_stats_cache if stem in k]
+    keys_to_remove = [k for k in _doc_stats_cache if stem in normalize_text(k)]
     for k in keys_to_remove:
         _doc_stats_cache.pop(k, None)
 
-    if latest_etl_result and (latest_etl_result.get("active_pdf") == filename or stem in latest_etl_result.get("doc_title", "")):
-        latest_etl_result = None
-        latest_content_list_path = None
+    if latest_etl_result:
+        active_pdf_norm = normalize_text(latest_etl_result.get("active_pdf", ""))
+        doc_title_norm = normalize_text(latest_etl_result.get("doc_title", ""))
+        if active_pdf_norm == normalize_text(filename) or stem in doc_title_norm:
+            latest_etl_result = None
+            latest_content_list_path = None
 
     # 5. 원본 PDF 파일 삭제 (완전 삭제 요청 시)
     if delete_pdf:
         targets = [DOCS_DIR / filename, BASE_DIR / "pdfs" / filename]
+        # NFD 파일명 호환 검색
+        fn_norm = normalize_text(filename)
+        for cand in list(DOCS_DIR.glob("*.pdf")) + list((BASE_DIR / "pdfs").glob("*.pdf")):
+            if normalize_text(cand.name) == fn_norm and cand not in targets:
+                targets.append(cand)
+
         for p in targets:
             if p.exists():
                 try:
@@ -594,7 +628,7 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
                     print(f"PDF 파일 삭제 실패 {p}: {e}")
 
         # 활성 PDF가 삭제된 경우 다음 PDF로 자동 전환
-        if current_selected_pdf_name == filename:
+        if normalize_text(current_selected_pdf_name) == normalize_text(filename):
             remaining_pdfs = [p.name for p in DOCS_DIR.glob("*.pdf")]
             current_selected_pdf_name = remaining_pdfs[0] if remaining_pdfs else None
 
@@ -662,12 +696,16 @@ async def get_favicon():
 
 
 @app.get("/api/etl/sample")
-async def get_sample_etl(strategy: Optional[str] = "general"):
+async def get_sample_etl(strategy: Optional[str] = "general", filename: Optional[str] = None):
     """기존 파싱 결과를 바탕으로 부모-자식 청크 & 표 원형 보존 ETL 결과 반환 (수정본 존재 시 우선 로드)"""
     global latest_etl_result, latest_content_list_path
-    found = find_latest_content_list(current_selected_pdf_name)
+    target_doc = filename or current_selected_pdf_name
+    if not target_doc:
+        raise HTTPException(status_code=400, detail="선택된 PDF 문서가 없습니다.")
+
+    found = find_latest_content_list(target_doc)
     if not found:
-        raise HTTPException(status_code=404, detail="No MinerU parsed content found.")
+        raise HTTPException(status_code=404, detail=f"문서 '{target_doc}'의 파싱 산출물이 없습니다.")
 
     file_path, content_list = found
     latest_content_list_path = file_path
@@ -678,6 +716,7 @@ async def get_sample_etl(strategy: Optional[str] = "general"):
         try:
             with open(edited_path, "r", encoding="utf-8") as f:
                 edited_data = json.load(f)
+                edited_data["active_pdf"] = target_doc
                 latest_etl_result = edited_data
                 return edited_data
         except Exception as e:
@@ -686,6 +725,7 @@ async def get_sample_etl(strategy: Optional[str] = "general"):
     doc_name = file_path.parent.parent.name
     chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
+    etl_res["active_pdf"] = target_doc
 
     # 표 이미지 상대 URL 보정 (/output/...)
     for chunk in etl_res.get("child_chunks", []):

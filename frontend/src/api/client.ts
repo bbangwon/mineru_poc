@@ -41,10 +41,15 @@ export async function uploadPdf(file: File): Promise<{
   return res.json();
 }
 
-export async function getEtlSample(strategy: string = 'general'): Promise<EtlResult> {
-  const res = await fetch(`/api/etl/sample?strategy=${encodeURIComponent(strategy)}`);
+export async function getEtlSample(strategy: string = 'general', filename?: string): Promise<EtlResult> {
+  const params = new URLSearchParams({ strategy });
+  if (filename) {
+    params.set('filename', filename);
+  }
+  const res = await fetch(`/api/etl/sample?${params.toString()}`);
   if (!res.ok) {
-    throw new Error('ETL 분석 샘플을 불러오지 못했습니다.');
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'ETL 분석 샘플을 불러오지 못했습니다.');
   }
   return res.json();
 }
