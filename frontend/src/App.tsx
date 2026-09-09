@@ -26,6 +26,9 @@ import {
   getQdrantConfig,
   deletePdfDocument,
   resetEtlByFilename,
+  getParserConfig,
+  saveParserConfig,
+  resetParserConfig,
 } from './api/client';
 import {
   getNextChunkId,
@@ -85,6 +88,7 @@ export function App() {
   const [allPages, setAllPages] = useState(true);
   const [startPage, setStartPage] = useState(0);
   const [endPage, setEndPage] = useState(2);
+  const [isSavingParserConfig, setIsSavingParserConfig] = useState(false);
 
   const [isParsing, setIsParsing] = useState(false);
   const [activeJob, setActiveJob] = useState<JobStatusResponse | null>(null);
@@ -284,6 +288,19 @@ export function App() {
         if (cfg.collection_name) setQdrantCollection(cfg.collection_name);
       })
       .catch(() => {});
+    getParserConfig()
+      .then((cfg) => {
+        if (cfg.backend) setEngine(cfg.backend);
+        if (cfg.method) setMethod(cfg.method);
+        if (cfg.formula !== undefined) setFormula(cfg.formula);
+        if (cfg.strategy) setStrategy(cfg.strategy);
+        if (cfg.all_pages !== undefined) setAllPages(cfg.all_pages);
+        if (cfg.start_page !== undefined) setStartPage(cfg.start_page);
+        if (cfg.end_page !== undefined) setEndPage(cfg.end_page);
+      })
+      .catch((err) => {
+        console.warn('Failed to load default parser config:', err);
+      });
   }, [fetchPdfs, fetchSample, checkActiveTask]);
 
   // Polling loop for active background task
@@ -412,6 +429,45 @@ export function App() {
     }
   };
 
+  // 3-1. Parser Configuration Handlers
+  const handleSaveParserConfig = async (override?: Partial<import('./types').ParserConfig>) => {
+    setIsSavingParserConfig(true);
+    try {
+      const cfgToSave = {
+        backend: override?.backend ?? engine,
+        method: override?.method ?? method,
+        formula: override?.formula ?? formula,
+        strategy: override?.strategy ?? strategy,
+        all_pages: override?.all_pages ?? allPages,
+        start_page: override?.start_page ?? startPage,
+        end_page: override?.end_page ?? endPage,
+      };
+      await saveParserConfig(cfgToSave);
+      showToast('기본 파서 설정이 output/parser_config.json에 저장되었습니다.');
+    } catch (err: any) {
+      showToast(err.message || '기본 파서 설정 저장 실패', true);
+    } finally {
+      setIsSavingParserConfig(false);
+    }
+  };
+
+  const handleResetParserConfig = async () => {
+    try {
+      const res = await resetParserConfig();
+      const cfg = res.config;
+      setEngine(cfg.backend);
+      setMethod(cfg.method);
+      setFormula(cfg.formula);
+      setStrategy(cfg.strategy);
+      setAllPages(cfg.all_pages);
+      setStartPage(cfg.start_page);
+      setEndPage(cfg.end_page);
+      showToast('기본 파서 설정이 초기 권장값으로 리셋되었습니다.');
+    } catch (err: any) {
+      showToast(err.message || '기본 파서 설정 초기화 실패', true);
+    }
+  };
+
   // 4. Run ETL Pipeline via Asynchronous Background Task
   const handleRunEtl = async (
     targetOrParams?: string | Partial<ParseRequestParams>,
@@ -447,6 +503,19 @@ export function App() {
       setAllPages(overrideAllPages);
       if (overrideStartPage !== null) setStartPage(overrideStartPage);
       if (overrideEndPage !== null) setEndPage(overrideEndPage);
+
+      // 백엔드 parser_config.json 에도 영구 저장
+      saveParserConfig({
+        backend: overrideBackend,
+        method: overrideMethod,
+        formula: overrideFormula,
+        strategy: overrideStrategy,
+        all_pages: overrideAllPages,
+        start_page: overrideStartPage ?? 0,
+        end_page: overrideEndPage ?? 2,
+      }).catch((err) => {
+        console.warn('Failed to persist parser config on run:', err);
+      });
     }
 
     if (!docToParse) {
@@ -2057,6 +2126,9 @@ export function App() {
             setStartPage={setStartPage}
             endPage={endPage}
             setEndPage={setEndPage}
+            onSaveParserConfig={handleSaveParserConfig}
+            onResetParserConfig={handleResetParserConfig}
+            isSavingParserConfig={isSavingParserConfig}
             onDeletePdf={handleDeletePdfDocument}
             onResetEtl={handleResetEtlDocument}
           />

@@ -22,6 +22,9 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Save,
+  RotateCcw,
+  Loader2,
 } from 'lucide-react';
 import type { PdfItem, GlobalStats, JobStatusResponse, ParseRequestParams } from '../types';
 import { RunEtlModal } from './RunEtlModal';
@@ -57,6 +60,9 @@ interface DashboardOverviewProps {
   setStartPage: (v: number) => void;
   endPage: number;
   setEndPage: (v: number) => void;
+  onSaveParserConfig?: () => Promise<void>;
+  onResetParserConfig?: () => Promise<void>;
+  isSavingParserConfig?: boolean;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -89,6 +95,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   setStartPage,
   endPage,
   setEndPage,
+  onSaveParserConfig,
+  onResetParserConfig,
+  isSavingParserConfig = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'running' | 'not_started' | 'embedded'>('all');
@@ -376,6 +385,45 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 <span>문서의 1페이지부터 마지막 페이지까지 전체를 파싱합니다.</span>
               </div>
             )}
+          </div>
+
+          {/* Action Bar: Save to Backend & Reset */}
+          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+              <span>💾 설정을 저장하면 서버(output/parser_config.json)에 영구 보존되어 새로고침 후에도 유지됩니다.</span>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              {onResetParserConfig && (
+                <button
+                  type="button"
+                  onClick={onResetParserConfig}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="초기 기본 권장 옵션으로 되돌립니다"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>기본값 리셋</span>
+                </button>
+              )}
+
+              {onSaveParserConfig && (
+                <button
+                  type="button"
+                  onClick={onSaveParserConfig}
+                  disabled={isSavingParserConfig}
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  title="현재 선택된 옵션들을 서버 기본 파서 옵션으로 저장합니다"
+                >
+                  {isSavingParserConfig ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isSavingParserConfig ? '저장 중...' : '기본 설정 저장'}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

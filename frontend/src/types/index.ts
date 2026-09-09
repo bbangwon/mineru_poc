@@ -267,4 +267,16 @@ export interface LLMRefineResponse {
   refined_chars: number;
 }
 
+// 7. 기본 파서 설정 관련 타입
+export interface ParserConfig {
+  backend: string;
+  method: string;
+  formula: boolean;
+  strategy: string;
+  all_pages: boolean;
+  start_page: number;
+  end_page: number;
+}
+
+
 

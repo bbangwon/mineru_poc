@@ -1,4 +1,4 @@
-import type { EtlResult, PdfListResponse, ParseRequestParams } from '../types';
+import type { EtlResult, PdfListResponse, ParseRequestParams, ParserConfig } from '../types';
 
 export async function getPdfList(): Promise<PdfListResponse> {
   const res = await fetch('/api/pdf/list');
@@ -336,5 +336,45 @@ export async function resetEtlByFilename(
   }
   return res.json();
 }
+
+// ----------------------------------------------------
+// Parser Configuration API
+// ----------------------------------------------------
+
+export async function getParserConfig(): Promise<ParserConfig> {
+  const res = await fetch('/api/parser/config');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '파서 설정을 불러오지 못했습니다.');
+  }
+  return res.json();
+}
+
+export async function saveParserConfig(
+  config: ParserConfig
+): Promise<{ success: boolean; config: ParserConfig }> {
+  const res = await fetch('/api/parser/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '파서 설정을 저장하지 못했습니다.');
+  }
+  return res.json();
+}
+
+export async function resetParserConfig(): Promise<{ success: boolean; config: ParserConfig }> {
+  const res = await fetch('/api/parser/config/reset', {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || '파서 설정을 초기화하지 못했습니다.');
+  }
+  return res.json();
+}
+
 
 

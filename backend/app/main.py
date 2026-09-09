@@ -31,6 +31,12 @@ from backend.app.services.llm_config_svc import (
     save_llm_config,
     get_default_system_prompt,
 )
+from backend.app.services.parser_config_svc import (
+    ParserConfig,
+    get_parser_config,
+    save_parser_config,
+    reset_parser_config,
+)
 from backend.app.services.llm_refine_svc import llm_refine_svc
 from rag_embed_core.config import QdrantConfig
 
@@ -1347,5 +1353,33 @@ async def api_refine_chunk(req: RefineChunkRequest):
             status_code=500,
             detail=f"텍스트 교정 중 오류가 발생했습니다: {str(e)}",
         )
+
+
+# Phase 3: 기본 파서 설정 (Parser Configuration) 영속화 엔드포인트
+@app.get("/api/parser/config")
+async def api_get_parser_config():
+    """현재 저장된 기본 파서 설정 조회"""
+    return get_parser_config()
+
+
+@app.post("/api/parser/config")
+async def api_save_parser_config(config: ParserConfig):
+    """기본 파서 설정 저장 및 영속화"""
+    try:
+        saved = save_parser_config(config)
+        return {"success": True, "config": saved}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파서 설정 저장 실패: {str(e)}")
+
+
+@app.post("/api/parser/config/reset")
+async def api_reset_parser_config():
+    """기본 파서 설정을 초기 기본값으로 리셋"""
+    try:
+        reset_config = reset_parser_config()
+        return {"success": True, "config": reset_config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파서 설정 리셋 실패: {str(e)}")
+
 
 
