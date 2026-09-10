@@ -187,6 +187,8 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   });
   const [metaNotice, setMetaNotice] = useState<string | null>(null);
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
+  const [editingMetaKey, setEditingMetaKey] = useState<string | null>(null);
+  const [editingMetaVal, setEditingMetaVal] = useState<string>('');
 
   // Parent Section Quick Lookup Map
   const parentMap = useMemo(() => {
@@ -841,6 +843,43 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     const updatedMeta = { ...activeChunk.metadata };
     delete updatedMeta[key];
     handleFieldChange('metadata', updatedMeta);
+    if (editingMetaKey === key) {
+      setEditingMetaKey(null);
+      setEditingMetaVal('');
+    }
+  };
+
+  // Start inline editing metadata tag value
+  const handleStartEditMetaTag = (key: string, val: any) => {
+    setEditingMetaKey(key);
+    setEditingMetaVal(String(val ?? ''));
+  };
+
+  // Save inline edited metadata tag value
+  const handleSaveEditMetaTag = () => {
+    if (!activeChunk || !editingMetaKey) return;
+    const currentMeta = activeChunk.metadata || {};
+    const updatedMeta = {
+      ...currentMeta,
+      [editingMetaKey]: editingMetaVal.trim(),
+    };
+    handleFieldChange('metadata', updatedMeta);
+    setMetaNotice(`'${editingMetaKey}' 태그 값이 수정되었습니다.`);
+    setTimeout(() => setMetaNotice(null), 2500);
+    setEditingMetaKey(null);
+    setEditingMetaVal('');
+  };
+
+  // Cancel inline editing
+  const handleCancelEditMetaTag = () => {
+    setEditingMetaKey(null);
+    setEditingMetaVal('');
+  };
+
+  // Quick fill input form from existing tag
+  const handleFillMetaForm = (key: string, val: any) => {
+    setNewMetaKey(key);
+    setNewMetaVal(String(val ?? ''));
   };
 
   // Copy custom metadata (excluding page info)
@@ -2824,54 +2863,146 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   {/* Existing Tags */}
                   <div className="flex flex-wrap gap-1.5 min-h-[30px] items-center">
                     {activeChunk.metadata && Object.keys(activeChunk.metadata).length > 0 ? (
-                      Object.entries(activeChunk.metadata).map(([key, val]) => (
-                        <span
-                          key={key}
-                          className="inline-flex items-center gap-1.5 text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 px-2 py-1 rounded-md shadow-2xs font-mono"
-                        >
-                          <span className="font-semibold text-indigo-700 dark:text-indigo-400">{key}:</span>
-                          <span className="text-slate-600 dark:text-slate-300">{String(val)}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMetaTag(key)}
-                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer ml-0.5"
-                            title="태그 삭제"
+                      Object.entries(activeChunk.metadata).map(([key, val]) => {
+                        const isEditingThis = editingMetaKey === key;
+                        if (isEditingThis) {
+                          return (
+                            <span
+                              key={key}
+                              className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 dark:bg-indigo-950/70 text-indigo-950 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 px-2 py-1 rounded-md shadow-2xs font-mono animate-in fade-in duration-100"
+                            >
+                              <span className="font-bold text-indigo-700 dark:text-indigo-400">{key}:</span>
+                              <input
+                                type="text"
+                                value={editingMetaVal}
+                                onChange={(e) => setEditingMetaVal(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveEditMetaTag();
+                                  if (e.key === 'Escape') handleCancelEditMetaTag();
+                                }}
+                                autoFocus
+                                className="bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-600 rounded px-1.5 py-0.5 text-xs text-slate-900 dark:text-slate-100 font-sans focus:outline-hidden focus:ring-1 focus:ring-indigo-500 w-32"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveEditMetaTag}
+                                className="text-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400 p-0.5 rounded hover:bg-emerald-50 dark:hover:bg-emerald-950/50 cursor-pointer"
+                                title="저장 (Enter)"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditMetaTag}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                                title="취소 (Esc)"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <span
+                            key={key}
+                            className="group inline-flex items-center gap-1.5 text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 px-2 py-1 rounded-md shadow-2xs font-mono hover:border-indigo-300 dark:hover:border-indigo-700 transition"
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))
+                            <button
+                              type="button"
+                              onClick={() => handleFillMetaForm(key, val)}
+                              title="클릭 시 하단 입력창에 채우기"
+                              className="font-semibold text-indigo-700 dark:text-indigo-400 hover:underline cursor-pointer"
+                            >
+                              {key}:
+                            </button>
+                            <span
+                              onClick={() => handleStartEditMetaTag(key, val)}
+                              title="클릭하여 값 바로 수정"
+                              className="text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-300 transition"
+                            >
+                              {String(val)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditMetaTag(key, val)}
+                              className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer opacity-60 group-hover:opacity-100 transition"
+                              title="값 바로 수정"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMetaTag(key)}
+                              className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer ml-0.5 opacity-60 group-hover:opacity-100 transition"
+                              title="태그 삭제"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })
                     ) : (
                       <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">등록된 커스텀 태그가 없습니다.</span>
                     )}
                   </div>
 
-                  {/* Add Tag Inputs */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={newMetaKey}
-                      onChange={(e) => setNewMetaKey(e.target.value)}
-                      placeholder="Key (예: category)"
-                      className="w-1/3 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
-                    />
-                    <input
-                      type="text"
-                      value={newMetaVal}
-                      onChange={(e) => setNewMetaVal(e.target.value)}
-                      placeholder="Value (예: safety_rules)"
-                      className="flex-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddMetaTag}
-                      disabled={!newMetaKey.trim()}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>태그 추가</span>
-                    </button>
-                  </div>
+                  {/* Add / Update Tag Inputs */}
+                  {(() => {
+                    const isExistingKey = Boolean(
+                      activeChunk.metadata &&
+                      newMetaKey.trim() &&
+                      newMetaKey.trim() in activeChunk.metadata
+                    );
+
+                    return (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={newMetaKey}
+                          onChange={(e) => setNewMetaKey(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddMetaTag();
+                          }}
+                          placeholder="Key (예: category)"
+                          className="w-1/3 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                        />
+                        <input
+                          type="text"
+                          value={newMetaVal}
+                          onChange={(e) => setNewMetaVal(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddMetaTag();
+                          }}
+                          placeholder="Value (예: safety_rules)"
+                          className="flex-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddMetaTag}
+                          disabled={!newMetaKey.trim()}
+                          className={`px-3 py-1.5 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer shrink-0 ${
+                            isExistingKey
+                              ? 'bg-amber-600 hover:bg-amber-700'
+                              : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                          title={isExistingKey ? '기존 키의 값을 업데이트합니다' : '새 메타데이터 태그 추가'}
+                        >
+                          {isExistingKey ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>값 수정</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>태그 추가</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
               </div>
