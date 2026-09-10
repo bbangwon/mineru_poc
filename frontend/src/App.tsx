@@ -46,6 +46,7 @@ import type {
   ChildChunk,
   ParentChunk,
   SectionNode,
+  SectionInsertPosition,
   ParentInsertPosition,
   JobStatusResponse,
   ParseRequestParams,
@@ -849,6 +850,7 @@ export function App() {
     title: string;
     parentSectionId?: string;
     level: number;
+    insertPosition?: SectionInsertPosition;
   }) => {
     if (!etlData) return;
     const sections = etlData.sections || etlData.parent_sections || [];
@@ -874,19 +876,75 @@ export function App() {
       page_range: parentSec ? parentSec.page_range : [1, 1],
     };
 
-    const updatedSections = [...sections, newSection];
+    let updatedSections: SectionNode[];
+    const pos = sectionData.insertPosition;
+
+    if (pos?.type === 'start') {
+      const rootIdx = sections.findIndex(
+        (s) => s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')
+      );
+      if (rootIdx !== -1) {
+        updatedSections = [
+          ...sections.slice(0, rootIdx + 1),
+          newSection,
+          ...sections.slice(rootIdx + 1),
+        ];
+      } else {
+        updatedSections = [newSection, ...sections];
+      }
+    } else if (pos?.type === 'after' && pos.sectionId) {
+      // 해당 sectionId 및 그 하위 섹션들의 마지막 노드 뒤에 삽입
+      const getDescendantIds = (rootId: string): Set<string> => {
+        const desc = new Set<string>();
+        const queue = [rootId];
+        while (queue.length > 0) {
+          const cur = queue.shift()!;
+          for (const s of sections) {
+            if (s.parent_section_id === cur && !desc.has(s.id)) {
+              desc.add(s.id);
+              queue.push(s.id);
+            }
+          }
+        }
+        return desc;
+      };
+
+      const descIds = getDescendantIds(pos.sectionId);
+      let insertAfterIdx = -1;
+      for (let i = sections.length - 1; i >= 0; i--) {
+        if (sections[i].id === pos.sectionId || descIds.has(sections[i].id)) {
+          insertAfterIdx = i;
+          break;
+        }
+      }
+
+      if (insertAfterIdx !== -1) {
+        updatedSections = [
+          ...sections.slice(0, insertAfterIdx + 1),
+          newSection,
+          ...sections.slice(insertAfterIdx + 1),
+        ];
+      } else {
+        updatedSections = [...sections, newSection];
+      }
+    } else {
+      updatedSections = [...sections, newSection];
+    }
+
     const updatedStats = {
       ...etlData.stats,
       total_sections: updatedSections.length,
       total_parent_sections: updatedSections.length,
     };
 
-    setEtlData({
+    const syncedEtl = syncHierarchyOrder({
       ...etlData,
       sections: updatedSections,
       parent_sections: updatedSections,
       stats: updatedStats,
     });
+
+    setEtlData(syncedEtl);
     setIsDirty(true);
     setSelectedSectionId(newId);
     showToast(`새 섹션 '${newSection.title}'이(가) 추가되었습니다.`);
@@ -1712,6 +1770,116 @@ export function App() {
     );
   };
 
+  // 10-1c. Move Section Order Handler (Swap with adjacent sibling section preserving descendants)
+  const handleMoveSection = (sectionId: string, direction: 'up' | 'down') => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+
+    const targetSec = sections.find((s) => s.id === sectionId);
+    if (!targetSec) {
+      showToast(`대상 섹션(${sectionId})을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    if (targetSec.level === 0 || targetSec.id.endsWith('_s00') || targetSec.id.endsWith('_root')) {
+      showToast('루트 문서 섹션의 순서는 변경할 수 없습니다.', true);
+      return;
+    }
+
+    // 동일한 상위 섹션을 공유하는 형제 섹션들 탐색
+    const siblings = sections.filter((s) => {
+      if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
+      const targetParent = targetSec.parent_section_id || '';
+      const sParent = s.parent_section_id || '';
+      return targetParent === sParent;
+    });
+
+    const currIdx = siblings.findIndex((s) => s.id === sectionId);
+    if (currIdx === -1) {
+      showToast('형제 섹션 목록에서 대상을 찾을 수 없습니다.', true);
+      return;
+    }
+
+    const swapIdx = direction === 'up' ? currIdx - 1 : currIdx + 1;
+    if (swapIdx < 0 || swapIdx >= siblings.length) {
+      showToast(
+        direction === 'up'
+          ? '해당 계층 내의 가장 첫 번째 섹션입니다.'
+          : '해당 계층 내의 가장 마지막 섹션입니다.'
+      );
+      return;
+    }
+
+    const partnerSec = siblings[swapIdx];
+
+    // 각 섹션 및 하위 자손(descendant) ID 집합 수집
+    const getSubtreeIds = (rootId: string): Set<string> => {
+      const ids = new Set<string>([rootId]);
+      let added = true;
+      while (added) {
+        added = false;
+        for (const s of sections) {
+          if (s.parent_section_id && ids.has(s.parent_section_id) && !ids.has(s.id)) {
+            ids.add(s.id);
+            added = true;
+          }
+        }
+      }
+      return ids;
+    };
+
+    const targetSubtreeIds = getSubtreeIds(targetSec.id);
+    const partnerSubtreeIds = getSubtreeIds(partnerSec.id);
+
+    const targetBlock = sections.filter((s) => targetSubtreeIds.has(s.id));
+    const remaining = sections.filter((s) => !targetSubtreeIds.has(s.id));
+
+    let updatedSections: SectionNode[];
+    if (direction === 'up') {
+      // partnerSec의 시작 위치 바로 앞에 targetBlock 삽입
+      const insertIdx = remaining.findIndex((s) => s.id === partnerSec.id);
+      if (insertIdx !== -1) {
+        updatedSections = [
+          ...remaining.slice(0, insertIdx),
+          ...targetBlock,
+          ...remaining.slice(insertIdx),
+        ];
+      } else {
+        updatedSections = sections;
+      }
+    } else {
+      // partnerSec 서브트리의 마지막 노드 바로 뒤에 targetBlock 삽입
+      let lastPartnerIdx = -1;
+      for (let i = remaining.length - 1; i >= 0; i--) {
+        if (partnerSubtreeIds.has(remaining[i].id)) {
+          lastPartnerIdx = i;
+          break;
+        }
+      }
+      if (lastPartnerIdx !== -1) {
+        updatedSections = [
+          ...remaining.slice(0, lastPartnerIdx + 1),
+          ...targetBlock,
+          ...remaining.slice(lastPartnerIdx + 1),
+        ];
+      } else {
+        updatedSections = sections;
+      }
+    }
+
+    const syncedEtl = syncHierarchyOrder({
+      ...etlData,
+      sections: updatedSections,
+      parent_sections: updatedSections,
+    });
+
+    setEtlData(syncedEtl);
+    setIsDirty(true);
+    showToast(
+      `섹션 '${targetSec.title}'의 순서가 ${direction === 'up' ? '위' : '아래'}로 변경되었습니다.`
+    );
+  };
+
   // 10-2. Add Child Chunk to Parent Handler
   const handleAddChild = (data: {
     parentChunkId: string;
@@ -2244,6 +2412,7 @@ export function App() {
                 onUpdateSectionTitle={handleUpdateSectionTitle}
                 onDeleteSection={handleDeleteSection}
                 onAddSection={handleAddSection}
+                onMoveSection={handleMoveSection}
                 onAddParent={handleAddParent}
                 onAddChild={handleAddChild}
                 onUpdateParent={handleUpdateParent}

@@ -37,7 +37,7 @@ import {
   ClipboardPaste,
   Download,
 } from 'lucide-react';
-import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '../types';
+import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse, SectionInsertPosition } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
 import { ChunkMergeModal } from './ChunkMergeModal';
 import { AddSectionModal } from './AddSectionModal';
@@ -67,7 +67,9 @@ interface ChunkStudioProps {
     title: string;
     parentSectionId?: string;
     level: number;
+    insertPosition?: SectionInsertPosition;
   }) => void;
+  onMoveSection?: (sectionId: string, direction: 'up' | 'down') => void;
   onAddParent?: (data: {
     sectionId: string;
     title: string;
@@ -124,6 +126,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onUpdateSectionTitle,
   onDeleteSection,
   onAddSection,
+  onMoveSection,
   onAddParent,
   onAddChild,
   onUpdateParent,
@@ -1261,6 +1264,56 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                 <Plus className="w-3 h-3" />
                               </button>
                             )}
+
+                            {/* Move section order triggers (Up/Down) */}
+                            {onMoveSection && !isRoot && (() => {
+                              const siblingSecs = parentSections.filter((s) => {
+                                if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
+                                return (s.parent_section_id || '') === (sec.parent_section_id || '');
+                              });
+                              const sIdx = siblingSecs.findIndex((s) => s.id === sec.id);
+                              const isFirstSec = sIdx <= 0;
+                              const isLastSec = sIdx === siblingSecs.length - 1;
+
+                              if (siblingSecs.length <= 1) return null;
+
+                              return (
+                                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition">
+                                  <button
+                                    type="button"
+                                    disabled={isFirstSec}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onMoveSection(sec.id, 'up');
+                                    }}
+                                    className={`p-0.5 rounded transition ${
+                                      isFirstSec
+                                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                        : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                    }`}
+                                    title={isFirstSec ? '계층 내 첫 번째 섹션입니다' : '섹션 위로 이동'}
+                                  >
+                                    <ChevronUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isLastSec}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onMoveSection(sec.id, 'down');
+                                    }}
+                                    className={`p-0.5 rounded transition ${
+                                      isLastSec
+                                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                        : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                    }`}
+                                    title={isLastSec ? '계층 내 마지막 섹션입니다' : '섹션 아래로 이동'}
+                                  >
+                                    <ChevronDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })()}
 
                             {/* Hover inline edit trigger */}
                             <button

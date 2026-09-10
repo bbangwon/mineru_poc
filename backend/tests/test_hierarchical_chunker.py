@@ -598,6 +598,87 @@ class TestHierarchicalChunker(unittest.TestCase):
         all_gen_texts = " ".join(c["text"] for c in res_gen["child_chunks"])
         self.assertIn("판정위원회의 심의에서 제외되는 질병", all_gen_texts)
 
+    def test_reindex_preserves_section_reordering(self):
+        """
+        동일 페이지 내에서 사용자가 섹션 순서를 수동으로 변경한 경우,
+        Re-index 후에도 사용자가 의도한 섹션 순서가 유지되는지 검증합니다.
+        """
+        etl_res = {
+            "doc_id": "sec_reorder_doc",
+            "doc_title": "섹션순서변경테스트",
+            "strategy": "legal",
+            "sections": [
+                {
+                    "id": "d_2222_s02",
+                    "title": "제2장 (앞으로 이동됨)",
+                    "level": 1,
+                    "parent_chunk_ids": ["d_2222_p02"],
+                    "child_chunk_ids": ["d_2222_c02"],
+                    "page_range": [2, 2],
+                },
+                {
+                    "id": "d_2222_s01",
+                    "title": "제1장 (뒤로 이동됨)",
+                    "level": 1,
+                    "parent_chunk_ids": ["d_2222_p01"],
+                    "child_chunk_ids": ["d_2222_c01"],
+                    "page_range": [2, 2],
+                },
+            ],
+            "parent_chunks": [
+                {
+                    "parent_chunk_id": "d_2222_p02",
+                    "id": "d_2222_p02",
+                    "section_id": "d_2222_s02",
+                    "title": "제2장 부모",
+                    "text": "제2장 부모 내용",
+                    "token_estimate": 15,
+                    "child_chunk_ids": ["d_2222_c02"],
+                    "page_range": [2, 2],
+                },
+                {
+                    "parent_chunk_id": "d_2222_p01",
+                    "id": "d_2222_p01",
+                    "section_id": "d_2222_s01",
+                    "title": "제1장 부모",
+                    "text": "제1장 부모 내용",
+                    "token_estimate": 15,
+                    "child_chunk_ids": ["d_2222_c01"],
+                    "page_range": [2, 2],
+                },
+            ],
+            "child_chunks": [
+                {
+                    "chunk_id": "d_2222_c02",
+                    "parent_chunk_id": "d_2222_p02",
+                    "parent_id": "d_2222_p02",
+                    "section_id": "d_2222_s02",
+                    "chunk_type": "paragraph",
+                    "text": "제2장 자식 내용입니다.",
+                    "page_number": 2,
+                    "breadcrumbs": [],
+                },
+                {
+                    "chunk_id": "d_2222_c01",
+                    "parent_chunk_id": "d_2222_p01",
+                    "parent_id": "d_2222_p01",
+                    "section_id": "d_2222_s01",
+                    "chunk_type": "paragraph",
+                    "text": "제1장 자식 내용입니다.",
+                    "page_number": 2,
+                    "breadcrumbs": [],
+                },
+            ],
+        }
+
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+
+        # 사용자가 바꾼 순서대로 제2장이 첫 번째 섹션(s01), 제1장이 두 번째 섹션(s02)이 되어야 함
+        self.assertEqual(reindexed["sections"][0]["title"], "제2장 (앞으로 이동됨)")
+        self.assertEqual(reindexed["sections"][1]["title"], "제1장 (뒤로 이동됨)")
+        self.assertEqual(reindexed["sections"][0]["id"], f"{reindexed['doc_id']}_s01")
+        self.assertEqual(reindexed["sections"][1]["id"], f"{reindexed['doc_id']}_s02")
+
 
 if __name__ == "__main__":
     unittest.main()

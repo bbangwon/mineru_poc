@@ -60,6 +60,11 @@ export interface SectionNode {
 // 하위 호환성 타입 별칭
 export type ParentSection = SectionNode;
 
+export type SectionInsertPosition =
+  | { type: 'end' }
+  | { type: 'start' }
+  | { type: 'after'; sectionId: string };
+
 // 2. Parent Chunk (문맥 / 중간 계층, ~2048 tokens)
 export interface ParentChunk {
   parent_chunk_id: string;         // 예: "d_xxxx_p001"

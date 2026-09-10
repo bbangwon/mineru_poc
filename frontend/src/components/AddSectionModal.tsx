@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, FolderPlus, HelpCircle } from 'lucide-react';
-import type { ParentSection } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, FolderPlus, HelpCircle, ArrowDownUp } from 'lucide-react';
+import type { ParentSection, SectionInsertPosition } from '../types';
 
 interface AddSectionModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface AddSectionModalProps {
     title: string;
     parentSectionId?: string;
     level: number;
+    insertPosition?: SectionInsertPosition;
   }) => void;
 }
 
@@ -21,6 +22,8 @@ export const AddSectionModal: React.FC<AddSectionModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [selectedParentId, setSelectedParentId] = useState<string>('');
+  const [positionType, setPositionType] = useState<'end' | 'start' | 'after'>('end');
+  const [afterSectionId, setAfterSectionId] = useState<string>('');
   const [level, setLevel] = useState<number>(1);
   const [error, setError] = useState<string>('');
 
@@ -29,10 +32,20 @@ export const AddSectionModal: React.FC<AddSectionModalProps> = ({
     if (isOpen) {
       setTitle('');
       setSelectedParentId('');
+      setPositionType('end');
+      setAfterSectionId(parentSections.length > 0 ? parentSections[parentSections.length - 1].id : '');
       setLevel(1);
       setError('');
     }
-  }, [isOpen]);
+  }, [isOpen, parentSections]);
+
+  // 후보 섹션 목록 (동일 상위 섹션을 공유하는 섹션 또는 전체)
+  const candidateSectionsForAfter = useMemo(() => {
+    if (selectedParentId) {
+      return parentSections.filter((s) => s.parent_section_id === selectedParentId);
+    }
+    return parentSections.filter((s) => !s.parent_section_id || s.level <= 1);
+  }, [parentSections, selectedParentId]);
 
   // Automatically update level based on selected parent section
   const handleParentChange = (parentId: string) => {
@@ -57,10 +70,18 @@ export const AddSectionModal: React.FC<AddSectionModalProps> = ({
       return;
     }
 
+    let insertPosition: SectionInsertPosition = { type: 'end' };
+    if (positionType === 'start') {
+      insertPosition = { type: 'start' };
+    } else if (positionType === 'after' && afterSectionId) {
+      insertPosition = { type: 'after', sectionId: afterSectionId };
+    }
+
     onAddSection({
       title: trimmedTitle,
       parentSectionId: selectedParentId || undefined,
       level,
+      insertPosition,
     });
 
     onClose();
@@ -169,6 +190,74 @@ export const AddSectionModal: React.FC<AddSectionModalProps> = ({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Insertion Position */}
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <label className="block font-semibold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <ArrowDownUp className="w-3.5 h-3.5 text-indigo-600" />
+                삽입 위치
+              </span>
+              <span className="text-[11px] font-normal text-slate-400">
+                문서 목록 상의 배치 순서
+              </span>
+            </label>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setPositionType('end')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  positionType === 'end'
+                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                맨 뒤에 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => setPositionType('start')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  positionType === 'start'
+                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                맨 앞에 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => setPositionType('after')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-semibold transition cursor-pointer text-center ${
+                  positionType === 'after'
+                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                특정 섹션 뒤
+              </button>
+            </div>
+
+            {positionType === 'after' && (
+              <div className="pt-1.5 space-y-1">
+                <label className="block text-[11px] font-medium text-slate-500">
+                  기준이 될 이전 섹션 선택:
+                </label>
+                <select
+                  value={afterSectionId}
+                  onChange={(e) => setAfterSectionId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800 font-medium cursor-pointer"
+                >
+                  {candidateSectionsForAfter.map((sec) => (
+                    <option key={sec.id} value={sec.id}>
+                      {sec.title} ({sec.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
