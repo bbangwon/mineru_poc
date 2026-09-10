@@ -33,6 +33,9 @@ import {
   Trash2,
   ListOrdered,
   Loader2,
+  Copy,
+  ClipboardPaste,
+  Download,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
@@ -41,7 +44,12 @@ import { AddSectionModal } from './AddSectionModal';
 import { AddParentModal } from './AddParentModal';
 import { AddChildModal } from './AddChildModal';
 import { EditParentModal } from './EditParentModal';
-import { formatChunkPage, formatChunkPageFull } from '../utils/pageUtils';
+import {
+  formatChunkPage,
+  formatChunkPageFull,
+  extractCustomMetadata,
+  mergeMetadataWithPage,
+} from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
 import { RefineDiffModal } from './RefineDiffModal';
@@ -66,6 +74,7 @@ interface ChunkStudioProps {
     pageNumber: number;
     initialChildText: string;
     chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
+    inheritMetadata?: boolean;
   }) => void;
   onAddChild?: (data: {
     parentChunkId: string;
@@ -166,6 +175,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [newMetaVal, setNewMetaVal] = useState('');
   const [pageStartInput, setPageStartInput] = useState<string>('');
   const [pageEndInput, setPageEndInput] = useState<string>('');
+
+  // Custom Metadata Clipboard & Notice States
+  const [metadataClipboard, setMetadataClipboard] = useState<Record<string, any> | null>(() => {
+    try {
+      const stored = localStorage.getItem('mineru_copied_meta');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [metaNotice, setMetaNotice] = useState<string | null>(null);
+  const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
 
   // Parent Section Quick Lookup Map
   const parentMap = useMemo(() => {
@@ -820,6 +841,133 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     const updatedMeta = { ...activeChunk.metadata };
     delete updatedMeta[key];
     handleFieldChange('metadata', updatedMeta);
+  };
+
+  // Copy custom metadata (excluding page info)
+  const handleCopyMeta = () => {
+    if (!activeChunk) return;
+    const custom = extractCustomMetadata(activeChunk.metadata);
+    if (Object.keys(custom).length === 0) {
+      setMetaNotice('복사할 커스텀 메타데이터가 없습니다.');
+      setTimeout(() => setMetaNotice(null), 2500);
+      return;
+    }
+    setMetadataClipboard(custom);
+    try {
+      localStorage.setItem('mineru_copied_meta', JSON.stringify(custom));
+    } catch (e) {}
+    setMetaNotice(`커스텀 메타데이터 ${Object.keys(custom).length}개가 복사되었습니다.`);
+    setTimeout(() => setMetaNotice(null), 2500);
+  };
+
+  // Paste custom metadata (safely preserving current chunk's page info)
+  const handlePasteMeta = () => {
+    if (!activeChunk) return;
+    let toPaste = metadataClipboard;
+    if (!toPaste) {
+      try {
+        const stored = localStorage.getItem('mineru_copied_meta');
+        if (stored) toPaste = JSON.parse(stored);
+      } catch (e) {}
+    }
+    if (!toPaste || Object.keys(toPaste).length === 0) {
+      setMetaNotice('붙여넣을 메타데이터가 없습니다. 먼저 [복사]를 해주세요.');
+      setTimeout(() => setMetaNotice(null), 2500);
+      return;
+    }
+    const merged = mergeMetadataWithPage(
+      activeChunk.metadata,
+      toPaste,
+      activeChunk.page_number,
+      activeChunk.page_end
+    );
+    handleFieldChange('metadata', merged);
+    setMetaNotice(`메타데이터 ${Object.keys(toPaste).length}개를 붙여넣었습니다. (페이지 번호 유지)`);
+    setTimeout(() => setMetaNotice(null), 2500);
+  };
+
+  // Candidate sources for metadata import
+  const importSources = useMemo(() => {
+    if (!activeChunk || childChunks.length === 0) return [];
+    const activeId = activeChunk.chunk_id;
+    const currentIdx = childChunks.findIndex((c) => c.chunk_id === activeId);
+    const sources: Array<{ label: string; subLabel: string; chunk: ChildChunk; count: number }> = [];
+
+    // 1. 직전 청크
+    if (currentIdx > 0) {
+      const prev = childChunks[currentIdx - 1];
+      const prevCustom = extractCustomMetadata(prev.metadata);
+      if (Object.keys(prevCustom).length > 0) {
+        const rawId = prev.chunk_id || '';
+        const shortId = rawId.includes('_c') ? 'C' + rawId.split('_c')[1] : rawId;
+        sources.push({
+          label: `직전 청크 (${shortId})`,
+          subLabel: Object.keys(prevCustom).slice(0, 3).join(', ') + (Object.keys(prevCustom).length > 3 ? '...' : ''),
+          chunk: prev,
+          count: Object.keys(prevCustom).length,
+        });
+      }
+    }
+
+    // 2. 동일 섹션 첫 청크
+    const secFirst = childChunks.find(
+      (c) => c.section_id === activeChunk.section_id && c.chunk_id !== activeId
+    );
+    if (secFirst) {
+      const secCustom = extractCustomMetadata(secFirst.metadata);
+      if (Object.keys(secCustom).length > 0) {
+        const rawId = secFirst.chunk_id || '';
+        const shortId = rawId.includes('_c') ? 'C' + rawId.split('_c')[1] : rawId;
+        if (!sources.some((s) => s.chunk.chunk_id === secFirst.chunk_id)) {
+          sources.push({
+            label: `동일 섹션 청크 (${shortId})`,
+            subLabel: Object.keys(secCustom).slice(0, 3).join(', ') + (Object.keys(secCustom).length > 3 ? '...' : ''),
+            chunk: secFirst,
+            count: Object.keys(secCustom).length,
+          });
+        }
+      }
+    }
+
+    // 3. 문서 첫 청크 (대표 메타데이터)
+    if (childChunks.length > 0) {
+      const docFirst = childChunks[0];
+      if (docFirst.chunk_id !== activeId) {
+        const docCustom = extractCustomMetadata(docFirst.metadata);
+        if (Object.keys(docCustom).length > 0 && !sources.some((s) => s.chunk.chunk_id === docFirst.chunk_id)) {
+          sources.push({
+            label: `문서 첫 청크 (대표 메타)`,
+            subLabel: Object.keys(docCustom).slice(0, 3).join(', ') + (Object.keys(docCustom).length > 3 ? '...' : ''),
+            chunk: docFirst,
+            count: Object.keys(docCustom).length,
+          });
+        }
+      }
+    }
+
+    return sources;
+  }, [activeChunk, childChunks]);
+
+  // Import custom metadata from another chunk
+  const handleImportFromSource = (sourceChunk: ChildChunk) => {
+    if (!activeChunk) return;
+    const custom = extractCustomMetadata(sourceChunk.metadata);
+    if (Object.keys(custom).length === 0) {
+      setMetaNotice('해당 청크에 가져올 커스텀 메타데이터가 없습니다.');
+      setTimeout(() => setMetaNotice(null), 2500);
+      setIsImportMenuOpen(false);
+      return;
+    }
+    const merged = mergeMetadataWithPage(
+      activeChunk.metadata,
+      custom,
+      activeChunk.page_number,
+      activeChunk.page_end
+    );
+    handleFieldChange('metadata', merged);
+    setIsImportMenuOpen(false);
+    setMetaNotice(`메타데이터 ${Object.keys(custom).length}개를 가져왔습니다. (페이지 번호 유지)`);
+    setTimeout(() => setMetaNotice(null), 2500);
   };
 
   // Active section name for breadcrumb/filter
@@ -2581,13 +2729,97 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
                 {/* Custom Metadata Tags Editor */}
                 <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5">
                       <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>임베딩 커스텀 메타데이터 (Custom Metadata Tags)</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500">RAG 검색 시 메타 필터링 활용</span>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        임베딩 커스텀 메타데이터
+                      </span>
+                    </div>
+
+                    {/* Metadata Action Toolbar */}
+                    <div className="flex items-center gap-1.5 relative">
+                      {/* 가져오기 드롭다운 */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsImportMenuOpen(!isImportMenuOpen)}
+                          disabled={importSources.length === 0}
+                          title={importSources.length === 0 ? '가져올 수 있는 이전 청크가 없습니다.' : '다른 청크에서 메타데이터 가져오기'}
+                          className="px-2 py-1 text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                        >
+                          <Download className="w-3 h-3 text-indigo-500" />
+                          <span>가져오기</span>
+                          <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+
+                        {isImportMenuOpen && (
+                          <div className="absolute right-0 top-full mt-1.5 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-30 p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-100">
+                            <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              메타데이터 가져올 청크 선택
+                            </div>
+                            {importSources.map((s, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleImportFromSource(s.chunk)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition cursor-pointer flex flex-col"
+                              >
+                                <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                  <span>{s.label}</span>
+                                  <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.2 rounded font-mono">
+                                    {s.count}개
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 truncate mt-0.5 font-mono">
+                                  {s.subLabel}
+                                </span>
+                              </button>
+                            ))}
+                            <div className="pt-1 border-t border-slate-100 dark:border-slate-800 px-2 py-0.5 text-[9px] text-slate-400">
+                              ※ 현재 청크의 페이지 번호는 유지됩니다.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 복사 버튼 */}
+                      <button
+                        type="button"
+                        onClick={handleCopyMeta}
+                        title="현재 청크의 커스텀 메타데이터 복사 (페이지 제외)"
+                        className="px-2 py-1 text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                      >
+                        <Copy className="w-3 h-3 text-slate-500" />
+                        <span>복사</span>
+                      </button>
+
+                      {/* 붙여넣기 버튼 */}
+                      <button
+                        type="button"
+                        onClick={handlePasteMeta}
+                        disabled={!metadataClipboard || Object.keys(metadataClipboard).length === 0}
+                        title={metadataClipboard ? `클립보드 메타데이터(${Object.keys(metadataClipboard).length}개) 붙여넣기` : '복사된 메타데이터 없음'}
+                        className="px-2 py-1 text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                      >
+                        <ClipboardPaste className="w-3 h-3 text-emerald-500" />
+                        <span>붙여넣기</span>
+                        {metadataClipboard && Object.keys(metadataClipboard).length > 0 && (
+                          <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1 rounded-full font-mono font-bold">
+                            {Object.keys(metadataClipboard).length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* 피드백 알림 배너 */}
+                  {metaNotice && (
+                    <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs text-indigo-700 dark:text-indigo-300 font-medium flex items-center gap-1.5 animate-in fade-in duration-150">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                      <span>{metaNotice}</span>
+                    </div>
+                  )}
 
                   {/* Existing Tags */}
                   <div className="flex flex-wrap gap-1.5 min-h-[30px] items-center">
@@ -2701,6 +2933,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           onClose={() => setIsAddParentModalOpen(false)}
           sections={parentSections}
           parentChunks={parentChunks}
+          childChunks={childChunks}
           defaultSectionId={targetSectionIdForAddParent || selectedSectionId}
           onAddParent={onAddParent}
         />

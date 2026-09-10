@@ -38,7 +38,7 @@ import {
   syncHierarchyOrder,
   estimateKoreanTokens,
 } from './utils/idUtils';
-import { syncChunkPageMetadata } from './utils/pageUtils';
+import { syncChunkPageMetadata, extractCustomMetadata } from './utils/pageUtils';
 import type {
   PdfItem,
   GlobalStats,
@@ -1478,6 +1478,7 @@ export function App() {
     initialChildText: string;
     chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
     insertPosition?: ParentInsertPosition;
+    inheritMetadata?: boolean;
   }) => {
     if (!etlData) return;
     const sections = etlData.sections || etlData.parent_sections || [];
@@ -1498,7 +1499,42 @@ export function App() {
         : [targetSection.title];
     const childBreadcrumbs = [...secBreadcrumbs, data.title];
 
-    // 1) 신규 Child 생성
+    // 커스텀 메타데이터 자동 상속 탐색 (페이지 정보는 복사하지 않고 격리)
+    let inheritedCustomMeta: Record<string, any> = {};
+    if (data.inheritMetadata !== false) {
+      const childList = etlData.child_chunks || [];
+      const parentList = etlData.parent_chunks || [];
+      const pos = data.insertPosition;
+
+      let sourceChunk: ChildChunk | undefined;
+
+      // 1) 특정 Parent 뒤에 삽입하는 경우: 해당 Parent의 마지막 Child 청크에서 탐색
+      if (pos?.type === 'after' && pos.parentId) {
+        const refParent = parentList.find(
+          (p) => (p.parent_chunk_id || p.id) === pos.parentId
+        );
+        if (refParent?.child_chunk_ids && refParent.child_chunk_ids.length > 0) {
+          const lastChildId = refParent.child_chunk_ids[refParent.child_chunk_ids.length - 1];
+          sourceChunk = childList.find((c) => c.chunk_id === lastChildId);
+        }
+      }
+
+      // 2) 동일 섹션 내의 Child 청크 탐색
+      if (!sourceChunk) {
+        sourceChunk = childList.find((c) => c.section_id === data.sectionId);
+      }
+
+      // 3) 섹션에 청크가 없다면 문서 전체의 첫 번째 청크 탐색 (문서 대표 공통 메타데이터)
+      if (!sourceChunk && childList.length > 0) {
+        sourceChunk = childList[0];
+      }
+
+      if (sourceChunk?.metadata) {
+        inheritedCustomMeta = extractCustomMetadata(sourceChunk.metadata);
+      }
+    }
+
+    // 1) 신규 Child 생성 (페이지 정보는 사용자가 입력한 pageNumber로 유지)
     const newChild: ChildChunk = {
       chunk_id: newChildId,
       parent_chunk_id: newParentId,
@@ -1510,7 +1546,7 @@ export function App() {
       page_number: data.pageNumber,
       breadcrumbs: childBreadcrumbs,
       is_edited: true,
-      metadata: syncChunkPageMetadata({}, data.pageNumber),
+      metadata: syncChunkPageMetadata(inheritedCustomMeta, data.pageNumber),
     };
 
     // 2) 신규 Parent 생성

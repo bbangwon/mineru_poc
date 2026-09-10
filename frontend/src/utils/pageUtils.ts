@@ -61,3 +61,49 @@ export function syncChunkPageMetadata(
 
   return updated;
 }
+
+/**
+ * 페이지 및 청크 식별용 시스템 예약 메타데이터 키 목록입니다.
+ * 커스텀 메타데이터 복사/상속 시 이 키들은 제외됩니다.
+ */
+export const RESERVED_METADATA_KEYS = new Set([
+  'page',
+  'page_start',
+  'page_end',
+  'pages',
+  'chunk_id',
+  'parent_chunk_id',
+  'section_id',
+  'id',
+]);
+
+/**
+ * 메타데이터 객체에서 시스템/페이지 관련 키를 제외하고 순수 커스텀 메타데이터만 추출합니다.
+ */
+export function extractCustomMetadata(metadata?: Record<string, any>): Record<string, any> {
+  if (!metadata) return {};
+  const custom: Record<string, any> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!RESERVED_METADATA_KEYS.has(key)) {
+      custom[key] = value;
+    }
+  }
+  return custom;
+}
+
+/**
+ * 원본 메타데이터에 새 커스텀 메타데이터를 안전하게 병합하고,
+ * 대상 청크의 pageNumber와 pageEnd를 온전히 유지하여 최종 메타데이터를 생성합니다.
+ */
+export function mergeMetadataWithPage(
+  baseMeta: Record<string, any> | undefined,
+  incomingMeta: Record<string, any> | undefined,
+  pageNumber: number,
+  pageEnd?: number
+): Record<string, any> {
+  const customBase = extractCustomMetadata(baseMeta);
+  const customIncoming = extractCustomMetadata(incomingMeta);
+  const merged = { ...customBase, ...customIncoming };
+  return syncChunkPageMetadata(merged, pageNumber, pageEnd);
+}
+

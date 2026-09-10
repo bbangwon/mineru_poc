@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Layers, HelpCircle, FileText, BookOpen, AlertCircle, ArrowDownUp } from 'lucide-react';
-import type { SectionNode, ParentChunk, ParentInsertPosition } from '../types';
+import { X, Layers, HelpCircle, FileText, BookOpen, AlertCircle, ArrowDownUp, Tag } from 'lucide-react';
+import type { SectionNode, ParentChunk, ParentInsertPosition, ChildChunk } from '../types';
+import { extractCustomMetadata } from '../utils/pageUtils';
 
 interface AddParentModalProps {
   isOpen: boolean;
   onClose: () => void;
   sections: SectionNode[];
   parentChunks?: ParentChunk[];
+  childChunks?: ChildChunk[];
   defaultSectionId?: string | null;
   onAddParent: (data: {
     sectionId: string;
@@ -15,6 +17,7 @@ interface AddParentModalProps {
     initialChildText: string;
     chunkType: 'paragraph' | 'table' | 'article_clause' | 'article';
     insertPosition?: ParentInsertPosition;
+    inheritMetadata?: boolean;
   }) => void;
 }
 
@@ -23,6 +26,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
   onClose,
   sections,
   parentChunks = [],
+  childChunks = [],
   defaultSectionId,
   onAddParent,
 }) => {
@@ -33,6 +37,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [chunkType, setChunkType] = useState<'paragraph' | 'article_clause' | 'table'>('paragraph');
   const [childText, setChildText] = useState<string>('');
+  const [inheritMetadata, setInheritMetadata] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
   // 현재 선택된 섹션에 속한 기존 Parent 목록 (섹션의 parent_chunk_ids 순서 유지)
@@ -53,6 +58,33 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
     return parentChunks.filter((p) => p.section_id === sectionId);
   }, [sectionId, sections, parentChunks]);
 
+  // 상속 가능한 메타데이터 소스 탐색 (페이지 관련 필드는 제외)
+  const candidateCustomMetadata = useMemo(() => {
+    if (!childChunks || childChunks.length === 0) return {};
+    let sourceChunk: ChildChunk | undefined;
+
+    // 1) 특정 Parent 뒤에 삽입하는 경우: 해당 Parent의 마지막 자식 청크
+    if (positionType === 'after' && afterParentId) {
+      const refP = parentChunks.find((p) => (p.parent_chunk_id || p.id) === afterParentId);
+      if (refP?.child_chunk_ids && refP.child_chunk_ids.length > 0) {
+        const lastChildId = refP.child_chunk_ids[refP.child_chunk_ids.length - 1];
+        sourceChunk = childChunks.find((c) => c.chunk_id === lastChildId);
+      }
+    }
+
+    // 2) 동일 섹션 내의 자식 청크
+    if (!sourceChunk && sectionId) {
+      sourceChunk = childChunks.find((c) => c.section_id === sectionId);
+    }
+
+    // 3) 문서 전체의 첫 번째 청크 (문서 전역 공통 메타데이터)
+    if (!sourceChunk && childChunks.length > 0) {
+      sourceChunk = childChunks[0];
+    }
+
+    return extractCustomMetadata(sourceChunk?.metadata);
+  }, [positionType, afterParentId, sectionId, parentChunks, childChunks]);
+
   useEffect(() => {
     if (isOpen) {
       const initialSec = defaultSectionId && sections.some((s) => s.id === defaultSectionId)
@@ -70,6 +102,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
       setPageNumber(defaultPage);
       setChunkType('paragraph');
       setChildText('');
+      setInheritMetadata(true);
       setError('');
     }
   }, [isOpen, defaultSectionId, sections]);
@@ -120,6 +153,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
       initialChildText: trimmedText,
       chunkType,
       insertPosition,
+      inheritMetadata,
     });
 
     onClose();
@@ -360,6 +394,52 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({
               부모 청크 생성 시 최소 1개의 자식 청크가 필수이므로 함께 등록됩니다. 생성 후 자식을 추가할 수 있습니다.
             </p>
           </div>
+
+          {/* Custom Metadata Inheritance Card */}
+          {Object.keys(candidateCustomMetadata).length > 0 && (
+            <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={inheritMetadata}
+                    onChange={(e) => setInheritMetadata(e.target.checked)}
+                    className="rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <span className="font-semibold text-purple-900 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-purple-600" />
+                    <span>기존 커스텀 메타데이터 자동 상속 ({Object.keys(candidateCustomMetadata).length}개)</span>
+                  </span>
+                </label>
+                <span className="text-[10px] text-purple-600 font-medium">
+                  페이지는 p.{pageNumber}로 유지
+                </span>
+              </div>
+
+              {inheritMetadata ? (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                    {Object.entries(candidateCustomMetadata).map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="inline-flex items-center gap-1 text-[11px] bg-white text-slate-800 border border-purple-200 px-2 py-0.5 rounded-md font-mono"
+                      >
+                        <span className="font-semibold text-purple-700">{k}:</span>
+                        <span className="text-slate-600 truncate max-w-[150px]">{String(v)}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-purple-600/80">
+                    ※ page_number, page_end 등 물리적 페이지 정보는 상속되지 않고 입력한 번호로 안전하게 생성됩니다.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-400 italic">
+                  자동 상속이 꺼져있어 빈 메타데이터(페이지 번호만 포함)로 등록됩니다.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
