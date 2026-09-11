@@ -71,8 +71,6 @@ export const JsonlModal: React.FC<JsonlModalProps> = ({
   if (isAtomicTable) {
     record.raw_html = chunk.raw_html || '';
     if (chunk.table_caption) record.table_caption = chunk.table_caption;
-    if (chunk.image_path) record.image_path = chunk.image_path;
-    if (chunk.image_url) record.image_url = chunk.image_url;
   }
 
   const jsonString = JSON.stringify(record, null, 2);

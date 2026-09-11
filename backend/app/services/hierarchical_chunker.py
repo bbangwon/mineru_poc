@@ -880,7 +880,6 @@ class HierarchicalChunker:
                     "raw_html": raw_html,
                     "table_caption": caption,
                     "table_footnote": footnote,
-                    "image_path": img_path,
                     "table_type": table_type,
                     "token_estimate": self.estimate_korean_tokens(search_text),
                     "page_number": tbl_start_p,
@@ -893,7 +892,6 @@ class HierarchicalChunker:
                         "type": "table",
                         "is_table": True,
                         "is_atomic_table": True,
-                        "has_image": bool(img_path),
                         "page": tbl_start_p,
                         "page_start": tbl_start_p,
                         "page_end": tbl_end_p,
@@ -1098,6 +1096,10 @@ class HierarchicalChunker:
             is_table = (chunk.get("chunk_type") == "table" or bool(chunk.get("is_atomic_table")))
             meta["is_atomic_table"] = is_table
 
+            meta.pop("has_image", None)
+            meta.pop("image_path", None)
+            meta.pop("image_url", None)
+
             parent_text = parent.get("text", "")
             if breadcrumbs_str and not parent_text.startswith(f"[{breadcrumbs_str}]"):
                 parent_context_text = f"[{breadcrumbs_str}]\n{parent_text}".strip()
@@ -1127,10 +1129,6 @@ class HierarchicalChunker:
             if is_table:
                 record["raw_html"] = chunk.get("raw_html", "")
                 record["table_caption"] = chunk.get("table_caption", "")
-                if chunk.get("image_path"):
-                    record["image_path"] = chunk.get("image_path")
-                if chunk.get("image_url"):
-                    record["image_url"] = chunk.get("image_url")
 
             lines.append(json.dumps(record, ensure_ascii=False))
 
@@ -1250,11 +1248,17 @@ class HierarchicalChunker:
             if p_end < p_start:
                 p_end = p_start
 
+            c.pop("image_path", None)
+            c.pop("image_url", None)
+
             if isinstance(c.get("metadata"), dict):
                 c["metadata"]["page"] = p_start
                 c["metadata"]["page_start"] = p_start
                 c["metadata"]["page_end"] = p_end
                 c["metadata"]["pages"] = list(range(p_start, p_end + 1))
+                c["metadata"].pop("has_image", None)
+                c["metadata"].pop("image_path", None)
+                c["metadata"].pop("image_url", None)
 
             new_children.append(c)
 

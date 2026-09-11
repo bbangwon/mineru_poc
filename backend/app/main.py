@@ -151,16 +151,6 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
         etl_res["active_pdf"] = pdf_path.name
         etl_res["total_pages"] = get_pdf_page_count(pdf_path)
 
-        for chunk in etl_res.get("child_chunks", []):
-            if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
-                img_p = Path(parse_res.get("output_dir", "")) / chunk["image_path"]
-                if img_p.exists():
-                    try:
-                        rel_to_output = img_p.relative_to(OUTPUT_DIR)
-                        chunk["image_url"] = f"/output/{rel_to_output}"
-                    except Exception:
-                        pass
-
         etl_res["backend"] = backend
         etl_res["method"] = method
         etl_res["strategy"] = strategy
@@ -733,14 +723,6 @@ async def get_sample_etl(strategy: Optional[str] = "general", filename: Optional
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
     etl_res["active_pdf"] = target_doc
 
-    # 표 이미지 상대 URL 보정 (/output/...)
-    for chunk in etl_res.get("child_chunks", []):
-        if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
-            img_p = file_path.parent / chunk["image_path"]
-            if img_p.exists():
-                rel_to_output = img_p.relative_to(OUTPUT_DIR)
-                chunk["image_url"] = f"/output/{rel_to_output}"
-
     latest_etl_result = etl_res
     return etl_res
 
@@ -840,14 +822,6 @@ async def reset_etl_result(req: Optional[ResetRequest] = None):
     chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strat)
 
-    # 표 이미지 상대 URL 보정
-    for chunk in etl_res.get("child_chunks", []):
-        if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
-            img_p = target_content_list_path.parent / chunk["image_path"]
-            if img_p.exists():
-                rel_to_output = img_p.relative_to(OUTPUT_DIR)
-                chunk["image_url"] = f"/output/{rel_to_output}"
-
     latest_etl_result = etl_res
     return etl_res
 
@@ -911,17 +885,6 @@ async def run_etl_parse(req: ParseRequest):
     etl_res["backend"] = req.backend or "pipeline"
     etl_res["method"] = method
     etl_res["strategy"] = chunk_strat
-
-    # 표 이미지 경로 보정
-    for chunk in etl_res.get("child_chunks", []):
-        if chunk.get("chunk_type") == "table" and chunk.get("image_path"):
-            img_p = Path(parse_res.get("output_dir", "")) / chunk["image_path"]
-            if img_p.exists():
-                try:
-                    rel_to_output = img_p.relative_to(OUTPUT_DIR)
-                    chunk["image_url"] = f"/output/{rel_to_output}"
-                except Exception:
-                    pass
 
     latest_etl_result = etl_res
     return etl_res

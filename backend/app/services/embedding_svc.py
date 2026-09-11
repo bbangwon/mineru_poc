@@ -158,6 +158,11 @@ class EmbeddingService:
             # 토큰 수 정규화
             token_count = chunk.get("token_estimate") or chunk.get("token_count") or 0
 
+            chunk_meta = dict(chunk.get("metadata") or {})
+            chunk_meta.pop("has_image", None)
+            chunk_meta.pop("image_path", None)
+            chunk_meta.pop("image_url", None)
+
             payload = {
                 "chunk_id": cid,
                 "doc_id": chunk.get("doc_id", ""),
@@ -181,9 +186,7 @@ class EmbeddingService:
                 "table_type": chunk.get("table_type"),
                 "is_table": bool(chunk.get("is_table") or chunk.get("chunk_type") == "table"),
                 "is_atomic_table": bool(chunk.get("is_atomic_table")),
-                "image_path": chunk.get("image_path"),
-                "image_url": chunk.get("image_url"),
-                "metadata": chunk.get("metadata") or {},
+                "metadata": chunk_meta,
             }
 
             points.append({
@@ -299,7 +302,6 @@ class EmbeddingService:
                 "table_caption": p.get("table_caption"),
                 "table_footnote": p.get("table_footnote"),
                 "is_table": p.get("is_table", False),
-                "image_url": p.get("image_url"),
                 "metadata": p.get("metadata", {}),
                 "payload": p,
             })

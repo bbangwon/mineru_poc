@@ -679,6 +679,46 @@ class TestHierarchicalChunker(unittest.TestCase):
         self.assertEqual(reindexed["sections"][0]["id"], f"{reindexed['doc_id']}_s01")
         self.assertEqual(reindexed["sections"][1]["id"], f"{reindexed['doc_id']}_s02")
 
+    def test_table_chunk_excludes_image_info(self):
+        """테이블 청크 및 JSONL 내보내기에서 image_path, image_url, metadata.has_image가 제외되는지 검증"""
+        content_list = [
+            {
+                "type": "table",
+                "table_caption": ["테스트 표"],
+                "html": "<table><tr><td>내용</td></tr></table>",
+                "image_source": {"path": "images/table_001.png"},
+                "page_idx": 1,
+            }
+        ]
+        chunker = HierarchicalChunker(doc_id="table_test_doc")
+        etl_res = chunker.chunk_content_list(content_list, doc_title="테이블테스트", strategy="general")
+
+        child_chunks = etl_res["child_chunks"]
+        self.assertEqual(len(child_chunks), 1)
+        tbl_chunk = child_chunks[0]
+
+        # 1. 청크 자체에 image_path, image_url이 없어야 함
+        self.assertNotIn("image_path", tbl_chunk)
+        self.assertNotIn("image_url", tbl_chunk)
+
+        # 2. metadata에 has_image, image_path, image_url이 없어야 함
+        self.assertNotIn("has_image", tbl_chunk["metadata"])
+        self.assertNotIn("image_path", tbl_chunk["metadata"])
+        self.assertNotIn("image_url", tbl_chunk["metadata"])
+
+        # 3. JSONL 내보내기 시에도 해당 정보가 제외되어야 함
+        jsonl_str = chunker.export_to_jsonl(etl_res)
+        self.assertNotIn("image_path", jsonl_str)
+        self.assertNotIn("image_url", jsonl_str)
+        self.assertNotIn("has_image", jsonl_str)
+
+        # 4. Re-index 후에도 제외 상태 유지 검증
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+        reindexed_chunk = reindexed["child_chunks"][0]
+        self.assertNotIn("image_path", reindexed_chunk)
+        self.assertNotIn("image_url", reindexed_chunk)
+        self.assertNotIn("has_image", reindexed_chunk.get("metadata", {}))
+
 
 if __name__ == "__main__":
     unittest.main()
