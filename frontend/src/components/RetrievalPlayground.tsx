@@ -95,9 +95,9 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
       {/* 검색 바 영역 */}
       <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md shadow-2xs transition-colors">
         <div className="max-w-4xl mx-auto space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h1 className="text-base sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                 <span>🔍 하이브리드 RRF 검색 플레이그라운드</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-semibold">
                   BGE-m3-ko + Kiwi Modifier.IDF
@@ -111,7 +111,7 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
               <button
                 type="button"
                 onClick={onOpenConfig}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
               >
                 <span>⚙️ Qdrant 설정</span>
               </button>
@@ -121,12 +121,12 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
           {/* 검색 인풋 그룹 */}
           <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
             {/* 컬렉션 선택 드롭다운 */}
-            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 shrink-0 shadow-2xs">
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 shrink-0 shadow-2xs">
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">컬렉션:</span>
               <select
                 value={selectedCol}
                 onChange={(e) => setSelectedCol(e.target.value)}
-                className="bg-transparent text-xs text-indigo-600 dark:text-indigo-400 font-mono font-bold focus:outline-hidden cursor-pointer max-w-[140px] truncate"
+                className="bg-transparent text-xs text-indigo-600 dark:text-indigo-400 font-mono font-bold focus:outline-hidden cursor-pointer max-w-[120px] sm:max-w-[140px] truncate"
                 title="검색 대상 Qdrant 컬렉션"
               >
                 {availableCollections.map((col) => (

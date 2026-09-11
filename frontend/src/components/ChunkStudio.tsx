@@ -36,6 +36,9 @@ import {
   Copy,
   ClipboardPaste,
   Download,
+  ArrowLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse, SectionInsertPosition } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
@@ -192,6 +195,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
   const [editingMetaKey, setEditingMetaKey] = useState<string | null>(null);
   const [editingMetaVal, setEditingMetaVal] = useState<string>('');
+
+  // Responsive Layout States for Mobile / Small Screens & Desktop Collapse
+  const [mobileTab, setMobileTab] = useState<'tree' | 'list' | 'editor'>('list');
+  const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
 
   // Parent Section Quick Lookup Map
   const parentMap = useMemo(() => {
@@ -359,6 +366,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     if (children.length > 0) {
       setSelectedChunkId(children[0].chunk_id);
     }
+    setMobileTab('list');
   };
 
   const handleSelectChildChunkFromTree = (sectionId: string, chunkId: string) => {
@@ -366,6 +374,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       onSelectSection(sectionId);
     }
     setSelectedChunkId(chunkId);
+    setMobileTab('editor');
 
     // Smooth scroll into view in Column 2
     setTimeout(() => {
@@ -1051,39 +1060,85 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-100/70 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden transition-colors">
+      {/* Mobile/Tablet Responsive Tab Bar (< lg) */}
+      <div className="lg:hidden flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-2 shrink-0 gap-1.5 select-none shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setMobileTab('tree')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            mobileTab === 'tree'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Network className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">1. 계층구조</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('list')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            mobileTab === 'list'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">2. 목록 ({filteredChunks.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('editor')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            mobileTab === 'editor'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Edit2 className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">3. 에디터 {activeChunk ? `(${activeChunk.chunk_id})` : ''}</span>
+        </button>
+      </div>
+
       {/* Studio Workspace 3-Column Layout */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800 min-h-0 overflow-hidden">
         
         {/* ======================================================== */}
         {/* COLUMN 1: 문서 위계 구조 (Hierarchy Tree Panel)         */}
         {/* ======================================================== */}
-        <section className="lg:col-span-3 flex flex-col bg-white dark:bg-slate-900 min-h-0 overflow-hidden transition-colors">
+        <section
+          className={`${
+            mobileTab === 'tree' ? 'flex' : 'hidden'
+          } lg:flex ${
+            isTreeCollapsed ? 'lg:hidden' : 'lg:col-span-3'
+          } flex-col bg-white dark:bg-slate-900 min-h-0 overflow-hidden transition-all duration-200`}
+        >
           {/* Header */}
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900 shrink-0">
-            <div className="flex items-center gap-2">
-              <Network className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                1열: 문서 계층 구조
+            <div className="flex items-center gap-2 min-w-0">
+              <Network className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider truncate">
+                1열: 계층 구조
               </h2>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={isAnySectionExpanded ? collapseAllSections : expandAllSections}
                 className="text-[11px] font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition cursor-pointer px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-800 bg-white dark:bg-slate-800 shadow-2xs"
                 title={isAnySectionExpanded ? '모든 하위 청크 접기' : '모든 하위 청크 펼치기'}
               >
-                {isAnySectionExpanded ? '전체 접기' : '전체 펼치기'}
+                {isAnySectionExpanded ? '접기' : '펼치기'}
               </button>
               {onAddSection && (
                 <button
                   type="button"
                   onClick={() => setIsAddSectionModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-semibold transition cursor-pointer shadow-2xs"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-semibold transition cursor-pointer shadow-2xs"
                   title="새 섹션 추가"
                 >
                   <Plus className="w-3 h-3" />
-                  <span>섹션 추가</span>
+                  <span className="hidden sm:inline">추가</span>
                 </button>
               )}
               {selectedSectionId && (
@@ -1093,9 +1148,19 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition cursor-pointer px-1 py-0.5"
                   title="섹션 필터 해제"
                 >
-                  전체 보기
+                  전체
                 </button>
               )}
+
+              {/* Desktop Collapse Button */}
+              <button
+                type="button"
+                onClick={() => setIsTreeCollapsed(true)}
+                className="hidden lg:inline-flex p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition cursor-pointer"
+                title="계층 패널 접기 (에디터 공간 넓히기)"
+              >
+                <PanelLeftClose className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
@@ -1170,6 +1235,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         if (!isEditingThis) {
                           onSelectSection(sec.id);
                           setManualExpandedState((prev) => ({ ...prev, [sec.id]: true }));
+                          setMobileTab('list');
                         }
                       }}
                       onDoubleClick={(e) => startEditSection(sec, e)}
@@ -1647,18 +1713,59 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
         {/* ======================================================== */}
         {/* COLUMN 2: 청크 타임라인 목록 (Chunk Timeline List)      */}
         {/* ======================================================== */}
-        <section className="lg:col-span-4 flex flex-col bg-slate-50/50 dark:bg-slate-950/60 min-h-0 overflow-hidden transition-colors">
+        <section
+          className={`${
+            mobileTab === 'list' ? 'flex' : 'hidden'
+          } lg:flex ${
+            isTreeCollapsed ? 'lg:col-span-5' : 'lg:col-span-4'
+          } flex-col bg-slate-50/50 dark:bg-slate-950/60 min-h-0 overflow-hidden transition-all duration-200`}
+        >
           {/* Header */}
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                2열: 청크 타임라인 목록
+            <div className="flex items-center gap-1.5 min-w-0">
+              {/* Mobile Back Button */}
+              <button
+                type="button"
+                onClick={() => setMobileTab('tree')}
+                className="lg:hidden p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded mr-0.5 cursor-pointer"
+                title="1열 계층 구조로 이동"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+
+              {/* Desktop Expand Tree Button */}
+              {isTreeCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setIsTreeCollapsed(false)}
+                  className="hidden lg:inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 mr-1.5 transition cursor-pointer shadow-2xs"
+                  title="계층 트리 패널 다시 펼치기"
+                >
+                  <PanelLeftOpen className="w-3.5 h-3.5" />
+                  <span>트리</span>
+                </button>
+              )}
+
+              <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider truncate">
+                2열: 청크 목록
               </h2>
             </div>
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              총 <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredChunks.length}</strong>개 청크
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                총 <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredChunks.length}</strong>개
+              </span>
+              {/* Mobile Quick Switch to Editor button */}
+              {activeChunk && (
+                <button
+                  type="button"
+                  onClick={() => setMobileTab('editor')}
+                  className="lg:hidden px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold border border-indigo-200 dark:border-indigo-800"
+                >
+                  에디터 →
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Active section indicator pill */}
@@ -2104,7 +2211,10 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           <div
                             key={chunk.chunk_id}
                             id={`chunk-card-${chunk.chunk_id}`}
-                            onClick={() => setSelectedChunkId(chunk.chunk_id)}
+                            onClick={() => {
+                              setSelectedChunkId(chunk.chunk_id);
+                              setMobileTab('editor');
+                            }}
                             className={`p-3 rounded-xl border transition-all cursor-pointer select-none text-xs relative ${
                               isChecked
                                 ? 'bg-indigo-50/50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-400/30 shadow-xs'
@@ -2284,13 +2394,30 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
         {/* ======================================================== */}
         {/* COLUMN 3: 포커스 에디터 패널 (Focus Editor Panel)       */}
         {/* ======================================================== */}
-        <section className="lg:col-span-5 flex flex-col bg-white dark:bg-slate-900 min-h-0 overflow-hidden transition-colors">
+        <section
+          className={`${
+            mobileTab === 'editor' ? 'flex' : 'hidden'
+          } lg:flex ${
+            isTreeCollapsed ? 'lg:col-span-7' : 'lg:col-span-5'
+          } flex-col bg-white dark:bg-slate-900 min-h-0 overflow-hidden transition-all duration-200`}
+        >
           {activeChunk ? (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Editor Top Bar */}
-              <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 rounded-lg">
+              <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900 flex items-center justify-between shrink-0 gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* Mobile Back Button */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab('list')}
+                    className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg bg-slate-100 dark:bg-slate-800 shrink-0 cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                    title="2열 청크 목록으로 이동"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">목록</span>
+                  </button>
+
+                  <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 rounded-lg shrink-0">
                     {activeChunk.chunk_type === 'table' ? (
                       <Table2 className="w-4 h-4" />
                     ) : activeChunk.chunk_type === 'article' ? (
@@ -2299,34 +2426,34 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                       <AlignLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100">3열: 포커스 에디터</h2>
-                      <span className="font-mono text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">3열: 에디터</h2>
+                      <span className="font-mono text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded shrink-0">
                         {activeChunk.chunk_id}
                       </span>
                       {activeChunk.is_edited && (
-                        <span className="text-[10px] bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-bold px-1.5 py-0.2 rounded">
+                        <span className="text-[10px] bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-bold px-1.5 py-0.2 rounded shrink-0">
                           수정됨
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      {formatChunkPageFull(activeChunk)} · 실시간 자동 동기화
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                      {formatChunkPageFull(activeChunk)} · 실시간 동기화
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                   {onSplitChunk && activeChunk.chunk_type !== 'table' && (
                     <button
                       type="button"
                       onClick={() => setIsSplitModalOpen(true)}
-                      className="text-xs text-amber-700 dark:text-amber-300 hover:text-amber-900 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-800 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
+                      className="text-xs text-amber-700 dark:text-amber-300 hover:text-amber-900 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-800 px-2 sm:px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
                       title="긴 청크를 2개로 분할"
                     >
                       <Scissors className="w-3.5 h-3.5 text-amber-600" />
-                      <span>청크 분할</span>
+                      <span className="hidden sm:inline">청크 분할</span>
                     </button>
                   )}
 
@@ -2334,18 +2461,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     <button
                       type="button"
                       onClick={() => handleDeleteSingleChunk(activeChunk.chunk_id)}
-                      className="text-xs text-rose-700 dark:text-rose-300 hover:text-rose-900 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
+                      className="text-xs text-rose-700 dark:text-rose-300 hover:text-rose-900 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 px-2 sm:px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
                       title="현재 청크 삭제 (상위 Parent 텍스트 자동 축소)"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>청크 삭제</span>
+                      <span className="hidden sm:inline">삭제</span>
                     </button>
                   )}
 
                   <button
                     type="button"
                     onClick={() => onOpenJsonlModal(activeChunk)}
-                    className="text-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
+                    className="text-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-700 px-2 sm:px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-semibold cursor-pointer shadow-2xs"
                   >
                     <FileCode2 className="w-3.5 h-3.5" />
                     <span>JSONL</span>
@@ -3062,13 +3189,21 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50/50 dark:bg-slate-950/60">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3 shadow-2xs">
                 <Sparkles className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">선택된 청크가 없습니다</h3>
-              <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+              <p className="text-xs text-slate-400 max-w-xs leading-relaxed mb-4">
                 2열 청크 타임라인 목록에서 청크를 클릭하면 본문 텍스트, 메타데이터, 부모 섹션을 집중적으로 편집할 수 있습니다.
               </p>
+              <button
+                type="button"
+                onClick={() => setMobileTab('list')}
+                className="lg:hidden px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Layers className="w-4 h-4" />
+                <span>청크 목록으로 이동</span>
+              </button>
             </div>
           )}
         </section>

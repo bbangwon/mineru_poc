@@ -120,6 +120,10 @@ export function App() {
   const [isIndexingQdrant, setIsIndexingQdrant] = useState(false);
   const [qdrantIndexProgress, setQdrantIndexProgress] = useState<{ msg: string; pct: number } | null>(null);
 
+  // Responsive Sidebar States
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
   const showToast = (message: string, isError = false) => {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 4000);
@@ -2297,6 +2301,10 @@ export function App() {
         activePdf={selectedPdf}
         theme={theme}
         setTheme={setTheme}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />
 
       {/* Right Main Content Area */}
@@ -2319,6 +2327,7 @@ export function App() {
           onOpenLLMConfig={() => setIsLLMConfigOpen(true)}
           onOpenQdrantConfig={() => setIsQdrantConfigOpen(true)}
           onIndexQdrant={handleIndexQdrant}
+          onToggleSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
         {activeTab === 'dashboard' ? (
