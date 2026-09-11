@@ -39,6 +39,7 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  Globe,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse, SectionInsertPosition } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
@@ -47,11 +48,13 @@ import { AddSectionModal } from './AddSectionModal';
 import { AddParentModal } from './AddParentModal';
 import { AddChildModal } from './AddChildModal';
 import { EditParentModal } from './EditParentModal';
+import { BulkMetadataModal } from './BulkMetadataModal';
 import {
   formatChunkPage,
   formatChunkPageFull,
   extractCustomMetadata,
   mergeMetadataWithPage,
+  getAllCustomMetadataKeys,
 } from '../utils/pageUtils';
 import { estimateKoreanTokens } from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
@@ -116,6 +119,15 @@ interface ChunkStudioProps {
   onReassignParentSection?: (parentChunkId: string, newSectionId: string) => void;
   onBatchCleanEmptyChunks?: () => void;
   onReindexIds?: () => void;
+  onBulkUpdateMetadata?: (params: {
+    mode: 'add_tag' | 'apply_batch' | 'delete_tag';
+    key?: string;
+    value?: any;
+    tags?: Record<string, any>;
+    scope: 'all' | 'section';
+    sectionId?: string;
+    overwrite?: boolean;
+  }) => void;
   isLoading: boolean;
 }
 
@@ -144,6 +156,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onReassignParentSection,
   onBatchCleanEmptyChunks,
   onReindexIds,
+  onBulkUpdateMetadata,
   isLoading,
 }) => {
   // Modal states for Parent & Child CRUD
@@ -155,6 +168,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
   const [isEditParentModalOpen, setIsEditParentModalOpen] = useState(false);
   const [targetParentForEdit, setTargetParentForEdit] = useState<ParentChunk | null>(null);
+
+  // Bulk Metadata Modal State
+  const [isBulkMetaModalOpen, setIsBulkMetaModalOpen] = useState(false);
 
   // 1. Column 1 State (Hierarchy Tree)
   const [sectionSearch, setSectionSearch] = useState('');
@@ -1019,6 +1035,30 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
     setIsImportMenuOpen(false);
     setMetaNotice(`메타데이터 ${Object.keys(custom).length}개를 가져왔습니다. (페이지 번호 유지)`);
     setTimeout(() => setMetaNotice(null), 2500);
+  };
+
+  // Existing custom metadata keys across entire document
+  const existingDocCustomKeys = useMemo(
+    () => getAllCustomMetadataKeys(childChunks),
+    [childChunks]
+  );
+
+  // Quick propagate single tag to all document chunks
+  const handleQuickApplyToAll = (key: string, val: any) => {
+    if (!onBulkUpdateMetadata) return;
+    if (
+      window.confirm(
+        `'${key}: ${val}' 메타데이터를 문서 전체 청크(${childChunks.length}개)에 일괄 적용하시겠습니까?`
+      )
+    ) {
+      onBulkUpdateMetadata({
+        mode: 'add_tag',
+        key,
+        value: val,
+        scope: 'all',
+        overwrite: true,
+      });
+    }
   };
 
   // Active section name for breadcrumb/filter
@@ -3029,6 +3069,17 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                           </span>
                         )}
                       </button>
+
+                      {/* 일괄 관리 버튼 */}
+                      <button
+                        type="button"
+                        onClick={() => setIsBulkMetaModalOpen(true)}
+                        title="문서 전체 또는 섹션 메타데이터 일괄 추가/전파/삭제"
+                        className="px-2 py-1 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/60 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                      >
+                        <Layers className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                        <span>일괄 관리</span>
+                      </button>
                     </div>
                   </div>
 
@@ -3110,6 +3161,14 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               title="값 바로 수정"
                             >
                               <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickApplyToAll(key, val)}
+                              className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer ml-0.5 opacity-60 group-hover:opacity-100 transition"
+                              title="이 태그를 문서 전체 청크에 일괄 적용"
+                            >
+                              <Globe className="w-3 h-3" />
                             </button>
                             <button
                               type="button"
@@ -3304,6 +3363,30 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           }
         }}
       />
+
+      {/* Bulk Custom Metadata Modal */}
+      {isBulkMetaModalOpen && (
+        <BulkMetadataModal
+          isOpen={isBulkMetaModalOpen}
+          onClose={() => setIsBulkMetaModalOpen(false)}
+          totalChunksCount={childChunks.length}
+          currentSectionId={selectedSectionId || undefined}
+          currentSectionTitle={filterParent?.title || undefined}
+          currentSectionChunksCount={
+            childChunks.filter(
+              (c) => (c.section_id || c.parent_id) === selectedSectionId
+            ).length
+          }
+          activeChunkId={activeChunk?.chunk_id}
+          activeChunkMetadata={activeChunk?.metadata}
+          existingDocCustomKeys={existingDocCustomKeys}
+          onApply={(params) => {
+            if (onBulkUpdateMetadata) {
+              onBulkUpdateMetadata(params);
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

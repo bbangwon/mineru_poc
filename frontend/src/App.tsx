@@ -38,7 +38,7 @@ import {
   syncHierarchyOrder,
   estimateKoreanTokens,
 } from './utils/idUtils';
-import { syncChunkPageMetadata, extractCustomMetadata } from './utils/pageUtils';
+import { syncChunkPageMetadata, extractCustomMetadata, applyBulkCustomMetadata } from './utils/pageUtils';
 import type {
   PdfItem,
   GlobalStats,
@@ -720,6 +720,55 @@ export function App() {
     setIsDirty(true);
     if (!silent) {
       showToast(`청크(${updatedChunk.chunk_id}) 수정이 적용되었습니다.`);
+    }
+  };
+
+  // 5-1. Bulk Custom Metadata Updater (Entire Document or Specific Section)
+  const handleBulkUpdateMetadata = (params: {
+    mode: 'add_tag' | 'apply_batch' | 'delete_tag';
+    key?: string;
+    value?: any;
+    tags?: Record<string, any>;
+    scope: 'all' | 'section';
+    sectionId?: string;
+    overwrite?: boolean;
+  }) => {
+    if (!etlData) return;
+
+    const { updatedChunks, affectedCount } = applyBulkCustomMetadata({
+      chunks: etlData.child_chunks,
+      mode: params.mode,
+      key: params.key,
+      value: params.value,
+      tags: params.tags,
+      scope: params.scope,
+      sectionId: params.sectionId || selectedSectionId || undefined,
+      overwrite: params.overwrite ?? true,
+    });
+
+    if (affectedCount === 0) {
+      showToast('변경되거나 적용된 청크가 없습니다.');
+      return;
+    }
+
+    setEtlData({
+      ...etlData,
+      child_chunks: updatedChunks,
+    });
+    setIsDirty(true);
+
+    if (params.mode === 'delete_tag') {
+      showToast(
+        `메타데이터 [${params.key}] 키가 ${affectedCount}개 청크에서 삭제되었습니다.`
+      );
+    } else if (params.mode === 'add_tag') {
+      showToast(
+        `메타데이터 [${params.key}: ${params.value}]이(가) ${affectedCount}개 청크에 일괄 적용되었습니다.`
+      );
+    } else {
+      showToast(
+        `메타데이터 ${Object.keys(params.tags || {}).length}개 태그가 ${affectedCount}개 청크에 일괄 적용되었습니다.`
+      );
     }
   };
 
@@ -2436,6 +2485,7 @@ export function App() {
                 onReassignParentSection={handleReassignParentSection}
                 onBatchCleanEmptyChunks={handleBatchCleanEmptyChunks}
                 onReindexIds={handleReindexIds}
+                onBulkUpdateMetadata={handleBulkUpdateMetadata}
                 isLoading={isLoadingEtl}
               />
             )}
