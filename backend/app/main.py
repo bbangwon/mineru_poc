@@ -14,7 +14,12 @@ _PKG_ROOT = BASE_DIR / "packages" / "rag_embed_core"
 if _PKG_ROOT.exists() and str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
 
+import logging
 import pypdf
+
+# pypdf 내부의 비정상 xref/포인터 경고 로그(Ignoring wrong pointing object 등) 억제
+logging.getLogger("pypdf").setLevel(logging.ERROR)
+
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
@@ -226,8 +231,23 @@ def find_latest_content_list(preferred_doc_name: Optional[str] = None) -> Option
         for mtime, p in candidates:
             norm_parts = [normalize_text(part) for part in p.parts]
             norm_filename = normalize_text(p.name)
-            # 경로 구성 폴더명에 문서 stem이 있거나, 파일명이 stem_content_list...로 시작하는지 검사
-            if target_stem in norm_parts or norm_filename.startswith(f"{target_stem}_content_list"):
+            # 1) 완전 일치 검사 (폴더명 일치 또는 파일명 접두사 일치)
+            is_matched = (
+                target_stem in norm_parts
+                or norm_filename.startswith(f"{target_stem}_content_list")
+            )
+            # 2) macOS NFD 자모 분리로 인한 MinerU UTF-8 200바이트 잘림(truncation) 호환 접두사 검사
+            if not is_matched:
+                for part in norm_parts:
+                    if len(part) >= 10 and (target_stem.startswith(part) or part.startswith(target_stem)):
+                        is_matched = True
+                        break
+                if not is_matched:
+                    cand_stem = norm_filename.replace("_content_list_v2.json", "").replace("_content_list.json", "")
+                    if len(cand_stem) >= 10 and (target_stem.startswith(cand_stem) or cand_stem.startswith(target_stem)):
+                        is_matched = True
+
+            if is_matched:
                 matched.append((mtime, p))
 
         if not matched:
@@ -577,7 +597,8 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
     if OUTPUT_DIR.exists():
         for root, dirs, files in os.walk(OUTPUT_DIR, topdown=False):
             for d in dirs:
-                if normalize_text(d) == stem:
+                norm_d = normalize_text(d)
+                if norm_d == stem or (len(norm_d) >= 10 and (stem.startswith(norm_d) or norm_d.startswith(stem))):
                     target_dir = Path(root) / d
                     try:
                         shutil.rmtree(target_dir, ignore_errors=True)

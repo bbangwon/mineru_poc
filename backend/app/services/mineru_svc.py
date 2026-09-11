@@ -4,6 +4,7 @@ import time
 import json
 import logging
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -93,6 +94,18 @@ class MineruService:
         # Find output results
         # MinerU usually outputs to: output_dir / pdf_name / <backend> / ...
         doc_dir = output_dir / pdf_name
+        if not doc_dir.exists() and output_dir.exists():
+            norm_target = unicodedata.normalize("NFC", pdf_name)
+            for sub in output_dir.iterdir():
+                if sub.is_dir():
+                    norm_sub = unicodedata.normalize("NFC", sub.name)
+                    if (
+                        norm_sub == norm_target
+                        or (len(norm_sub) >= 10 and (norm_target.startswith(norm_sub) or norm_sub.startswith(norm_target)))
+                    ):
+                        doc_dir = sub
+                        break
+
         md_content = ""
         content_list = []
         md_file_path = None
