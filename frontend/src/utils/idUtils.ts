@@ -570,3 +570,68 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
     child_chunks: finalChildren,
   };
 }
+
+/**
+ * UI 표시용 Child 청크 ID 포맷터
+ * doc_1b3e74823f195d1b921b6f3d8070a2c4_c0001 -> c0001
+ */
+export function formatDisplayChunkId(id?: string | null): string {
+  if (!id) return '';
+  const match = id.match(/_c(\d+)$/i);
+  if (match) return `c${match[1]}`;
+  if (id.includes('_')) {
+    const last = id.split('_').pop();
+    if (last) return last;
+  }
+  return id;
+}
+
+/**
+ * UI 표시용 Parent 청크 ID 포맷터
+ * doc_1b3e74823f195d1b921b6f3d8070a2c4_p0001 -> P0001
+ * p0001 -> P0001
+ */
+export function formatDisplayParentId(id?: string | null): string {
+  if (!id) return '';
+  const match = id.match(/_p(\d+)$/i);
+  if (match) return `P${match[1]}`;
+  if (id.includes('_')) {
+    const last = id.split('_').pop();
+    if (last) {
+      if (/^p\d+$/i.test(last)) return 'P' + last.slice(1);
+      return last;
+    }
+  }
+  if (/^p\d+$/i.test(id)) return 'P' + id.slice(1);
+  return id;
+}
+
+/**
+ * UI 표시용 Section ID 포맷터
+ * doc_1b3e74823f195d1b921b6f3d8070a2c4_s01 -> s01
+ */
+export function formatDisplaySectionId(id?: string | null): string {
+  if (!id) return '';
+  const match = id.match(/_s(\d+)$/i);
+  if (match) return `s${match[1]}`;
+  if (id.includes('_')) {
+    const last = id.split('_').pop();
+    if (last) return last;
+  }
+  return id;
+}
+
+/**
+ * UI 표시용 범용 ID 포맷터
+ */
+export function formatDisplayId(id?: string | null): string {
+  if (!id) return '';
+  if (/_p\d+$/i.test(id) || /^p\d+$/i.test(id)) return formatDisplayParentId(id);
+  if (/_c\d+$/i.test(id) || /^c\d+$/i.test(id)) return formatDisplayChunkId(id);
+  if (/_s\d+$/i.test(id) || /^s\d+$/i.test(id)) return formatDisplaySectionId(id);
+  if (id.includes('_')) {
+    const last = id.split('_').pop();
+    if (last) return last;
+  }
+  return id;
+}

@@ -59,7 +59,11 @@ import {
   mergeMetadataWithPage,
   getAllCustomMetadataKeys,
 } from '../utils/pageUtils';
-import { estimateKoreanTokens } from '../utils/idUtils';
+import {
+  estimateKoreanTokens,
+  formatDisplayChunkId,
+  formatDisplayParentId,
+} from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
 import { RefineDiffModal } from './RefineDiffModal';
 
@@ -466,9 +470,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
       preview = '(내용 없음)';
     }
 
-    const shortId = chunk.chunk_id.includes('_')
-      ? chunk.chunk_id.split('_').pop()
-      : chunk.chunk_id;
+    const shortId = formatDisplayChunkId(chunk.chunk_id);
 
     return (
       <div
@@ -1181,7 +1183,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           }`}
         >
           <Edit2 className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">3. 에디터 {activeChunk ? `(${activeChunk.chunk_id})` : ''}</span>
+          <span className="truncate">3. 에디터 {activeChunk ? `(${formatDisplayChunkId(activeChunk.chunk_id)})` : ''}</span>
         </button>
       </div>
 
@@ -1325,7 +1327,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                             (c) => (c.parent_chunk_id || c.parent_id) === pid
                           );
                         const hasPChildren = pChildren.length > 0;
-                        const shortPid = pid.includes('_p') ? 'P' + pid.split('_p')[1] : pid;
+                        const shortPid = formatDisplayParentId(pid);
                         const isParentActive = activeParentChunk?.parent_chunk_id === pid;
 
                         return (
@@ -2232,18 +2234,21 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     {/* Parent Container Box Header */}
                     <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <span className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700/80 shadow-2xs">
-                          Parent: {pid}
+                        <span
+                          className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700/80 shadow-2xs shrink-0 cursor-help"
+                          title={`전체 Parent ID: ${pid}`}
+                        >
+                          Parent: {formatDisplayParentId(pid)}
                         </span>
                         {parent.title && (
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={parent.title}>
                             {parent.title}
                           </span>
                         )}
-                        <span className="text-[10px] text-slate-400 font-mono">
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
                           p.{parent.page_range?.[0] || 1}{parent.page_range?.[1] && parent.page_range[1] > (parent.page_range[0] || 1) ? `~${parent.page_range[1]}` : ''}
                         </span>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono bg-white dark:bg-slate-800 px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono bg-white dark:bg-slate-800 px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700 shrink-0">
                           자식 {group.children.length}개
                         </span>
                       </div>
@@ -2454,8 +2459,11 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                   </span>
                                 )}
 
-                                <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-semibold">
-                                  {chunk.chunk_id}
+                                <span
+                                  className="font-mono text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-semibold shrink-0 cursor-help"
+                                  title={`전체 청크 ID: ${chunk.chunk_id}`}
+                                >
+                                  {formatDisplayChunkId(chunk.chunk_id)}
                                 </span>
 
                                 <span className="text-[10px] text-slate-400 font-mono">
@@ -2624,8 +2632,11 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">3열: 에디터</h2>
-                      <span className="font-mono text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded shrink-0">
-                        {activeChunk.chunk_id}
+                      <span
+                        className="font-mono text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded shrink-0 cursor-help"
+                        title={`전체 청크 ID: ${activeChunk.chunk_id}`}
+                      >
+                        {formatDisplayChunkId(activeChunk.chunk_id)}
                       </span>
                       {activeChunk.is_edited && (
                         <span className="text-[10px] bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-bold px-1.5 py-0.2 rounded shrink-0">
@@ -2740,8 +2751,11 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>상위 Parent:</span>
                       </span>
-                      <span className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700">
-                        {activeParentChunk.parent_chunk_id || activeParentChunk.id}
+                      <span
+                        className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700 shrink-0 cursor-help"
+                        title={`전체 Parent ID: ${activeParentChunk.parent_chunk_id || activeParentChunk.id}`}
+                      >
+                        {formatDisplayParentId(activeParentChunk.parent_chunk_id || activeParentChunk.id)}
                       </span>
                       {activeParentChunk.title && (
                         <span className="text-slate-700 dark:text-slate-200 font-medium truncate max-w-xs">
@@ -2824,15 +2838,18 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                 {/* 1. Parent Section, Page Range & Exclude Setting Row */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800">
                   {/* Parent Section Reassign */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <div className="min-w-0">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                        <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                         소속 섹션 재할당
                       </span>
                       {activeChunk.parent_chunk_id && (
-                        <span className="font-mono text-[10px] font-normal text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-1.5 py-0.2 rounded">
-                          {activeChunk.parent_chunk_id}
+                        <span
+                          className="font-mono text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-1.5 py-0.2 rounded shrink-0 cursor-help truncate max-w-[120px]"
+                          title={`상위 Parent ID: ${activeChunk.parent_chunk_id}`}
+                        >
+                          {formatDisplayParentId(activeChunk.parent_chunk_id)}
                         </span>
                       )}
                     </label>
@@ -2858,13 +2875,13 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   </div>
 
                   {/* Page Number & Range Selector */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <BookOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <div className="min-w-0">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                        <BookOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                         페이지 번호 (시작 ~ 끝)
                       </span>
-                      <span className="font-mono text-[10px] text-slate-400 font-semibold">
+                      <span className="font-mono text-[10px] text-slate-400 font-semibold shrink-0">
                         {formatChunkPageFull(activeChunk)}
                       </span>
                     </label>

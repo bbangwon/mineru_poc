@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Edit3, FolderTree, AlertCircle, Trash2 } from 'lucide-react';
 import type { ParentChunk, SectionNode } from '../types';
+import { formatDisplayParentId } from '../utils/idUtils';
 
 interface EditParentModalProps {
   isOpen: boolean;
@@ -86,7 +87,9 @@ export const EditParentModal: React.FC<EditParentModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">Parent(부모 청크) 수정</h3>
-              <p className="text-xs text-slate-500 font-mono">ID: {pid}</p>
+              <p className="text-xs text-slate-500 font-mono cursor-help" title={`전체 Parent ID: ${pid}`}>
+                ID: {formatDisplayParentId(pid)}
+              </p>
             </div>
           </div>
           <button

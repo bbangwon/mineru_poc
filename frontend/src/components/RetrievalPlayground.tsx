@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { SearchResultItem, SearchTestResponse } from '../types';
 import { searchTest, getQdrantCollections } from '../api/client';
+import { formatDisplayChunkId } from '../utils/idUtils';
 
 interface RetrievalPlaygroundProps {
   collectionName?: string;
@@ -236,7 +237,12 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
                   <span className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs border border-indigo-500/30">
                     {item.rank}
                   </span>
-                  <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{item.chunk_id}</span>
+                  <span
+                    className="font-mono text-slate-800 dark:text-slate-200 font-semibold cursor-help"
+                    title={`전체 청크 ID: ${item.chunk_id}`}
+                  >
+                    {formatDisplayChunkId(item.chunk_id)}
+                  </span>
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
                       item.chunk_type === 'table'
@@ -340,7 +346,9 @@ export const RetrievalPlayground: React.FC<RetrievalPlaygroundProps> = ({
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">청크 상세 정보</span>
-                <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">({selectedResult.chunk_id})</span>
+                <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400 cursor-help" title={`전체 청크 ID: ${selectedResult.chunk_id}`}>
+                  ({formatDisplayChunkId(selectedResult.chunk_id)})
+                </span>
               </div>
               <button
                 type="button"

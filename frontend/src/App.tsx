@@ -38,6 +38,7 @@ import {
   reindexEtlData,
   syncHierarchyOrder,
   estimateKoreanTokens,
+  formatDisplayChunkId,
 } from './utils/idUtils';
 import { syncChunkPageMetadata, extractCustomMetadata, applyBulkCustomMetadata } from './utils/pageUtils';
 import type {
@@ -720,7 +721,7 @@ export function App() {
 
     setIsDirty(true);
     if (!silent) {
-      showToast(`청크(${updatedChunk.chunk_id}) 수정이 적용되었습니다.`);
+      showToast(`청크(${formatDisplayChunkId(updatedChunk.chunk_id)}) 수정이 적용되었습니다.`);
     }
   };
 
@@ -1392,7 +1393,7 @@ export function App() {
     setIsDirty(true);
 
     const pruneMsg = prunedParentIds.size > 0 ? ` (자식 청크가 0개인 Parent ${prunedParentIds.size}개 자동 정리됨)` : '';
-    showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${mergedChunk.chunk_id}).${pruneMsg}`);
+    showToast(`${chunkIds.length}개 청크가 성공적으로 병합되었습니다 (${formatDisplayChunkId(mergedChunk.chunk_id)}).${pruneMsg}`);
   };
 
   // 9-1. Delete Chunks Handler (Multi-parent Support, Parent Text Shrinking, Auto-pruning)

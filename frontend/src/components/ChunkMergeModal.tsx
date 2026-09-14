@@ -12,7 +12,7 @@ import {
   AlignLeft,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
-import { estimateKoreanTokens } from '../utils/idUtils';
+import { estimateKoreanTokens, formatDisplayChunkId } from '../utils/idUtils';
 
 interface ChunkMergeModalProps {
   selectedChunks: ChildChunk[];
@@ -154,7 +154,9 @@ export const ChunkMergeModal: React.FC<ChunkMergeModalProps> = ({
                   ) : (
                     <AlignLeft className="w-3 h-3 text-slate-400" />
                   )}
-                  <span className="font-semibold text-slate-800">{c.chunk_id}</span>
+                  <span className="font-semibold text-slate-800 cursor-help" title={`전체 청크 ID: ${c.chunk_id}`}>
+                    {formatDisplayChunkId(c.chunk_id)}
+                  </span>
                   <span className="text-[10px] text-slate-400">~{c.token_estimate || countWords(c.text)}w</span>
                 </div>
                 {idx < selectedChunks.length - 1 && (

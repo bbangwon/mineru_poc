@@ -2,7 +2,12 @@ import React from 'react';
 import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info, Trash2, Sparkles } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { formatChunkPageFull } from '../utils/pageUtils';
-import { estimateKoreanTokens } from '../utils/idUtils';
+import {
+  estimateKoreanTokens,
+  formatDisplayChunkId,
+  formatDisplayParentId,
+  formatDisplaySectionId,
+} from '../utils/idUtils';
 
 interface ChunkCardProps {
   chunk: ChildChunk;
@@ -103,8 +108,11 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             </span>
           ) : null}
 
-          <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-            {chunk.chunk_id}
+          <span
+            className="font-mono text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded cursor-help shrink-0"
+            title={`전체 청크 ID: ${chunk.chunk_id}`}
+          >
+            {formatDisplayChunkId(chunk.chunk_id)}
           </span>
           <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
             {formatChunkPageFull(chunk)}
@@ -226,8 +234,18 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
       {/* Footer Info */}
       <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono">
         <span>
-          Parent: <strong className="text-slate-600 dark:text-slate-300">{chunk.parent_chunk_id || chunk.parent_id}</strong>
-          {chunk.section_id && ` | Section: ${chunk.section_id}`}
+          Parent:{' '}
+          <strong
+            className="text-slate-600 dark:text-slate-300 cursor-help"
+            title={`전체 Parent ID: ${chunk.parent_chunk_id || chunk.parent_id}`}
+          >
+            {formatDisplayParentId(chunk.parent_chunk_id || chunk.parent_id)}
+          </strong>
+          {chunk.section_id && (
+            <span title={`전체 Section ID: ${chunk.section_id}`}>
+              {' '}| Section: {formatDisplaySectionId(chunk.section_id)}
+            </span>
+          )}
           {parentSection && ` (${parentSection.title})`}
         </span>
         <span>추정 토큰: ~{wordCount} tokens</span>

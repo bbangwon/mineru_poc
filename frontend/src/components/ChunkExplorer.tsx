@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Layers, Table2, AlignLeft, Filter, Search, X, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk } from '../types';
 import { ChunkCard } from './ChunkCard';
+import { formatDisplayParentId } from '../utils/idUtils';
 
 interface ChunkExplorerProps {
   chunks: ChildChunk[];
@@ -117,8 +118,8 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
           {activeParentChunk && (
             <span className="inline-flex items-center gap-1 text-[11px] bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded border border-purple-200">
               <Layers className="w-3 h-3 text-purple-600" />
-              <span className="max-w-[200px] truncate">
-                Parent: {activeParentChunk.title || activeParentChunk.parent_chunk_id}
+              <span className="max-w-[200px] truncate" title={activeParentChunk.parent_chunk_id}>
+                Parent: {activeParentChunk.title || formatDisplayParentId(activeParentChunk.parent_chunk_id)}
               </span>
               {onClearParentFilter && (
                 <button
@@ -212,8 +213,11 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs font-bold text-purple-900">
-                      [{activeParentChunk.parent_chunk_id || activeParentChunk.id}]
+                    <span
+                      className="font-mono text-xs font-bold text-purple-900 cursor-help shrink-0"
+                      title={`전체 Parent ID: ${activeParentChunk.parent_chunk_id || activeParentChunk.id}`}
+                    >
+                      [{formatDisplayParentId(activeParentChunk.parent_chunk_id || activeParentChunk.id)}]
                     </span>
                     <span className="text-xs font-semibold text-slate-800">
                       {activeParentChunk.title || '상위 부모 문맥 (Parent Context)'}
