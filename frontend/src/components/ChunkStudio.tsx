@@ -40,6 +40,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Globe,
+  CornerDownRight,
+  CornerUpLeft,
 } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse, SectionInsertPosition } from '../types';
 import { ChunkSplitModal } from './ChunkSplitModal';
@@ -49,6 +51,7 @@ import { AddParentModal } from './AddParentModal';
 import { AddChildModal } from './AddChildModal';
 import { EditParentModal } from './EditParentModal';
 import { BulkMetadataModal } from './BulkMetadataModal';
+import { ReparentSectionModal } from './ReparentSectionModal';
 import {
   formatChunkPage,
   formatChunkPageFull,
@@ -76,6 +79,9 @@ interface ChunkStudioProps {
     insertPosition?: SectionInsertPosition;
   }) => void;
   onMoveSection?: (sectionId: string, direction: 'up' | 'down') => void;
+  onReparentSection?: (sectionId: string, newParentSectionId: string | null) => void;
+  onIndentSection?: (sectionId: string) => void;
+  onOutdentSection?: (sectionId: string) => void;
   onAddParent?: (data: {
     sectionId: string;
     title: string;
@@ -142,6 +148,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
   onDeleteSection,
   onAddSection,
   onMoveSection,
+  onReparentSection,
+  onIndentSection,
+  onOutdentSection,
   onAddParent,
   onAddChild,
   onUpdateParent,
@@ -165,6 +174,9 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
 
   const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
   const [targetParentForAddChild, setTargetParentForAddChild] = useState<ParentChunk | null>(null);
+
+  const [reparentModalSection, setReparentModalSection] = useState<ParentSection | null>(null);
+  const [isReparentModalOpen, setIsReparentModalOpen] = useState(false);
 
   const [isEditParentModalOpen, setIsEditParentModalOpen] = useState(false);
   const [targetParentForEdit, setTargetParentForEdit] = useState<ParentChunk | null>(null);
@@ -1371,55 +1383,138 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                               </button>
                             )}
 
-                            {/* Move section order triggers (Up/Down) */}
-                            {onMoveSection && !isRoot && (() => {
-                              const siblingSecs = parentSections.filter((s) => {
-                                if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
-                                return (s.parent_section_id || '') === (sec.parent_section_id || '');
-                              });
-                              const sIdx = siblingSecs.findIndex((s) => s.id === sec.id);
-                              const isFirstSec = sIdx <= 0;
-                              const isLastSec = sIdx === siblingSecs.length - 1;
+                            {/* Section hierarchy & order controls */}
+                            {!isRoot && (
+                              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition">
+                                {/* Move section order triggers (Up/Down) */}
+                                {onMoveSection && (() => {
+                                  const siblingSecs = parentSections.filter((s) => {
+                                    if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
+                                    return (s.parent_section_id || '') === (sec.parent_section_id || '');
+                                  });
+                                  const sIdx = siblingSecs.findIndex((s) => s.id === sec.id);
+                                  const isFirstSec = sIdx <= 0;
+                                  const isLastSec = sIdx === siblingSecs.length - 1;
 
-                              if (siblingSecs.length <= 1) return null;
+                                  if (siblingSecs.length <= 1) return null;
 
-                              return (
-                                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition">
+                                  return (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={isFirstSec}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onMoveSection(sec.id, 'up');
+                                        }}
+                                        className={`p-0.5 rounded transition ${
+                                          isFirstSec
+                                            ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                            : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                        }`}
+                                        title={isFirstSec ? '계층 내 첫 번째 섹션입니다' : '섹션 위로 이동'}
+                                      >
+                                        <ChevronUp className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isLastSec}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onMoveSection(sec.id, 'down');
+                                        }}
+                                        className={`p-0.5 rounded transition ${
+                                          isLastSec
+                                            ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                            : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                        }`}
+                                        title={isLastSec ? '계층 내 마지막 섹션입니다' : '섹션 아래로 이동'}
+                                      >
+                                        <ChevronDown className="w-3 h-3" />
+                                      </button>
+                                    </>
+                                  );
+                                })()}
+
+                                {/* Outdent (내어쓰기: level - 1) */}
+                                {onOutdentSection && (() => {
+                                  const rootSec = parentSections.find(
+                                    (s) => s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')
+                                  );
+                                  const canOutdent = Boolean(
+                                    sec.parent_section_id &&
+                                      sec.parent_section_id !== rootSec?.id &&
+                                      sec.level > 1
+                                  );
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={!canOutdent}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOutdentSection(sec.id);
+                                      }}
+                                      className={`p-0.5 rounded transition ${
+                                        !canOutdent
+                                          ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                          : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                      }`}
+                                      title={canOutdent ? '상위 계층으로 내어쓰기 (승격)' : '이미 최상위 계층입니다'}
+                                    >
+                                      <CornerUpLeft className="w-3 h-3" />
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Indent (들여쓰기: 이전 형제의 하위로 이동, level + 1) */}
+                                {onIndentSection && (() => {
+                                  const siblingSecs = parentSections.filter((s) => {
+                                    if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
+                                    return (s.parent_section_id || '') === (sec.parent_section_id || '');
+                                  });
+                                  const sIdx = siblingSecs.findIndex((s) => s.id === sec.id);
+                                  const canIndent = sIdx > 0;
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={!canIndent}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onIndentSection(sec.id);
+                                      }}
+                                      className={`p-0.5 rounded transition ${
+                                        !canIndent
+                                          ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                          : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
+                                      }`}
+                                      title={
+                                        canIndent
+                                          ? `이전 섹션('${siblingSecs[sIdx - 1]?.title}')의 하위 섹션으로 들여쓰기`
+                                          : '들여쓰기할 이전 형제 섹션이 없습니다'
+                                      }
+                                    >
+                                      <CornerDownRight className="w-3 h-3" />
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Reparent Modal Trigger */}
+                                {onReparentSection && (
                                   <button
                                     type="button"
-                                    disabled={isFirstSec}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onMoveSection(sec.id, 'up');
+                                      setReparentModalSection(sec);
+                                      setIsReparentModalOpen(true);
                                     }}
-                                    className={`p-0.5 rounded transition ${
-                                      isFirstSec
-                                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
-                                        : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
-                                    }`}
-                                    title={isFirstSec ? '계층 내 첫 번째 섹션입니다' : '섹션 위로 이동'}
+                                    className="p-0.5 rounded transition text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer"
+                                    title="상위 섹션 변경 (모달)"
                                   >
-                                    <ChevronUp className="w-3 h-3" />
+                                    <FolderTree className="w-3 h-3" />
                                   </button>
-                                  <button
-                                    type="button"
-                                    disabled={isLastSec}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onMoveSection(sec.id, 'down');
-                                    }}
-                                    className={`p-0.5 rounded transition ${
-                                      isLastSec
-                                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
-                                        : 'text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer'
-                                    }`}
-                                    title={isLastSec ? '계층 내 마지막 섹션입니다' : '섹션 아래로 이동'}
-                                  >
-                                    <ChevronDown className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              );
-                            })()}
+                                )}
+                              </div>
+                            )}
 
                             {/* Hover inline edit trigger */}
                             <button
@@ -3383,6 +3478,24 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
           onApply={(params) => {
             if (onBulkUpdateMetadata) {
               onBulkUpdateMetadata(params);
+            }
+          }}
+        />
+      )}
+
+      {/* Reparent Section (Change Parent / Nesting) Modal */}
+      {isReparentModalOpen && reparentModalSection && (
+        <ReparentSectionModal
+          isOpen={isReparentModalOpen}
+          onClose={() => {
+            setIsReparentModalOpen(false);
+            setReparentModalSection(null);
+          }}
+          targetSection={reparentModalSection}
+          parentSections={parentSections}
+          onReparent={(secId, newParentId) => {
+            if (onReparentSection) {
+              onReparentSection(secId, newParentId);
             }
           }}
         />

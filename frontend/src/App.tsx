@@ -1933,6 +1933,249 @@ export function App() {
     );
   };
 
+  // 10-1d. Reparent Section Handler (Move section under another parent or promote to root level)
+  const handleReparentSection = (sectionId: string, newParentSectionId: string | null) => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const parentChunks = etlData.parent_chunks || [];
+    const childChunks = etlData.child_chunks || [];
+
+    const targetSec = sections.find((s) => s.id === sectionId);
+    if (!targetSec) {
+      showToast(`대상 섹션(${sectionId})을 찾을 수 없습니다.`, true);
+      return;
+    }
+
+    if (targetSec.level === 0 || targetSec.id.endsWith('_s00') || targetSec.id.endsWith('_root')) {
+      showToast('루트 문서 섹션은 이동할 수 없습니다.', true);
+      return;
+    }
+
+    const rootSec = sections.find(
+      (s) => s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')
+    );
+
+    // newParentSectionId가 비어있거나 rootSec과 같으면 최상위(level 1)로 설정
+    const isTargetRoot = !newParentSectionId || (rootSec && newParentSectionId === rootSec.id);
+    const targetParentId = isTargetRoot ? (rootSec ? rootSec.id : undefined) : newParentSectionId;
+
+    if (targetSec.parent_section_id === targetParentId) {
+      showToast('이미 해당 상위 섹션에 속해 있습니다.');
+      return;
+    }
+
+    // 1. 순환 참조 검사: targetSec 및 하위 자손(descendant) ID 집합 추출
+    const descendantIds = new Set<string>([sectionId]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const s of sections) {
+        if (s.parent_section_id && descendantIds.has(s.parent_section_id) && !descendantIds.has(s.id)) {
+          descendantIds.add(s.id);
+          added = true;
+        }
+      }
+    }
+
+    if (targetParentId && descendantIds.has(targetParentId)) {
+      showToast('자기 자신이나 하위 자손 섹션을 상위 섹션으로 지정할 수 없습니다.', true);
+      return;
+    }
+
+    const newParentSec = targetParentId ? sections.find((s) => s.id === targetParentId) : null;
+    const baseBreadcrumbs = newParentSec
+      ? (newParentSec.breadcrumbs || [newParentSec.title])
+      : (rootSec ? (rootSec.breadcrumbs || [rootSec.title]) : []);
+
+    // 2. targetSec 및 하위 자손들의 level, breadcrumbs 재계산
+    const sectionBreadcrumbsMap = new Map<string, string[]>();
+    const sectionLevelMap = new Map<string, number>();
+
+    const newTargetLevel = newParentSec
+      ? (newParentSec.level === 0 ? 1 : newParentSec.level + 1)
+      : 1;
+    const newTargetBreadcrumbs = [...baseBreadcrumbs, targetSec.title];
+
+    sectionBreadcrumbsMap.set(targetSec.id, newTargetBreadcrumbs);
+    sectionLevelMap.set(targetSec.id, newTargetLevel);
+
+    const updateDescendants = (parentId: string, parentBreadcrumbs: string[], parentLevel: number) => {
+      for (const s of sections) {
+        if (s.parent_section_id === parentId && descendantIds.has(s.id)) {
+          const nextBreadcrumbs = [...parentBreadcrumbs, s.title];
+          const nextLevel = parentLevel + 1;
+          sectionBreadcrumbsMap.set(s.id, nextBreadcrumbs);
+          sectionLevelMap.set(s.id, nextLevel);
+          updateDescendants(s.id, nextBreadcrumbs, nextLevel);
+        }
+      }
+    };
+    updateDescendants(targetSec.id, newTargetBreadcrumbs, newTargetLevel);
+
+    // 3. SectionNode 목록 갱신
+    const updatedSectionMap = new Map<string, SectionNode>();
+    for (const s of sections) {
+      if (s.id === targetSec.id) {
+        updatedSectionMap.set(s.id, {
+          ...s,
+          parent_section_id: targetParentId,
+          level: newTargetLevel,
+          breadcrumbs: newTargetBreadcrumbs,
+        });
+      } else if (descendantIds.has(s.id)) {
+        updatedSectionMap.set(s.id, {
+          ...s,
+          level: sectionLevelMap.get(s.id) ?? s.level,
+          breadcrumbs: sectionBreadcrumbsMap.get(s.id) ?? s.breadcrumbs,
+        });
+      } else {
+        updatedSectionMap.set(s.id, s);
+      }
+    }
+
+    // 4. 배열 순서 재배치 (newParentSec의 서브트리 바로 뒤로 이동)
+    const subtreeNodes: SectionNode[] = [];
+    const remainingSections: SectionNode[] = [];
+
+    for (const s of sections) {
+      if (descendantIds.has(s.id)) {
+        subtreeNodes.push(updatedSectionMap.get(s.id)!);
+      } else {
+        remainingSections.push(updatedSectionMap.get(s.id)!);
+      }
+    }
+
+    let finalSections: SectionNode[];
+    if (newParentSec && newParentSec.level !== 0 && !newParentSec.id.endsWith('_s00')) {
+      const parentDescendantIds = new Set<string>([newParentSec.id]);
+      let pAdded = true;
+      while (pAdded) {
+        pAdded = false;
+        for (const s of remainingSections) {
+          if (s.parent_section_id && parentDescendantIds.has(s.parent_section_id) && !parentDescendantIds.has(s.id)) {
+            parentDescendantIds.add(s.id);
+            pAdded = true;
+          }
+        }
+      }
+      let lastIdx = -1;
+      for (let i = remainingSections.length - 1; i >= 0; i--) {
+        if (parentDescendantIds.has(remainingSections[i].id)) {
+          lastIdx = i;
+          break;
+        }
+      }
+      if (lastIdx !== -1) {
+        finalSections = [
+          ...remainingSections.slice(0, lastIdx + 1),
+          ...subtreeNodes,
+          ...remainingSections.slice(lastIdx + 1),
+        ];
+      } else {
+        finalSections = [...remainingSections, ...subtreeNodes];
+      }
+    } else {
+      finalSections = [...remainingSections, ...subtreeNodes];
+    }
+
+    // 5. 소속 Parent Chunk 및 Child Chunk의 breadcrumbs 연쇄 동기화
+    const updatedParentChunks = parentChunks.map((p) => {
+      const secId = p.section_id;
+      if (secId && sectionBreadcrumbsMap.has(secId)) {
+        return {
+          ...p,
+          breadcrumbs: sectionBreadcrumbsMap.get(secId),
+          is_edited: true,
+        };
+      }
+      return p;
+    });
+
+    const updatedChildChunks = childChunks.map((c) => {
+      const secId = c.section_id;
+      if (secId && sectionBreadcrumbsMap.has(secId)) {
+        const parentChunk = parentChunks.find((p) => (p.parent_chunk_id || p.id) === (c.parent_chunk_id || c.parent_id));
+        const secBcs = sectionBreadcrumbsMap.get(secId)!;
+        const childBcs = parentChunk?.title ? [...secBcs, parentChunk.title] : [...secBcs];
+        return {
+          ...c,
+          breadcrumbs: childBcs,
+          is_edited: true,
+        };
+      }
+      return c;
+    });
+
+    const syncedEtl = syncHierarchyOrder({
+      ...etlData,
+      sections: finalSections,
+      parent_sections: finalSections,
+      parent_chunks: updatedParentChunks,
+      child_chunks: updatedChildChunks,
+    });
+
+    setEtlData(syncedEtl);
+    setIsDirty(true);
+    showToast(
+      newParentSec && newParentSec.level !== 0 && !newParentSec.id.endsWith('_s00')
+        ? `'${targetSec.title}' 섹션이 '${newParentSec.title}'의 하위 섹션으로 편입되었습니다.`
+        : `'${targetSec.title}' 섹션이 상위 계층으로 승격되었습니다.`
+    );
+  };
+
+  // 10-1e. Indent Section Handler (Move under previous sibling section)
+  const handleIndentSection = (sectionId: string) => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetSec = sections.find((s) => s.id === sectionId);
+    if (!targetSec) return;
+
+    if (targetSec.level === 0 || targetSec.id.endsWith('_s00') || targetSec.id.endsWith('_root')) {
+      showToast('루트 문서 섹션은 변경할 수 없습니다.', true);
+      return;
+    }
+
+    const siblings = sections.filter((s) => {
+      if (s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')) return false;
+      return (s.parent_section_id || '') === (targetSec.parent_section_id || '');
+    });
+
+    const currIdx = siblings.findIndex((s) => s.id === sectionId);
+    if (currIdx <= 0) {
+      showToast('들여쓰기할 이전 형제 섹션이 없습니다.', true);
+      return;
+    }
+
+    const prevSibling = siblings[currIdx - 1];
+    handleReparentSection(sectionId, prevSibling.id);
+  };
+
+  // 10-1f. Outdent Section Handler (Promote to parent's sibling level)
+  const handleOutdentSection = (sectionId: string) => {
+    if (!etlData) return;
+    const sections = etlData.sections || etlData.parent_sections || [];
+    const targetSec = sections.find((s) => s.id === sectionId);
+    if (!targetSec) return;
+
+    if (targetSec.level === 0 || targetSec.id.endsWith('_s00') || targetSec.id.endsWith('_root')) {
+      showToast('루트 문서 섹션은 변경할 수 없습니다.', true);
+      return;
+    }
+
+    const rootSec = sections.find(
+      (s) => s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root')
+    );
+
+    const currParent = sections.find((s) => s.id === targetSec.parent_section_id);
+    if (!currParent || currParent.level === 0 || currParent.id === rootSec?.id) {
+      showToast('이미 최상위 계층입니다.', true);
+      return;
+    }
+
+    const grandParentId = currParent.parent_section_id || (rootSec ? rootSec.id : null);
+    handleReparentSection(sectionId, grandParentId);
+  };
+
   // 10-2. Add Child Chunk to Parent Handler
   const handleAddChild = (data: {
     parentChunkId: string;
@@ -2471,6 +2714,9 @@ export function App() {
                 onDeleteSection={handleDeleteSection}
                 onAddSection={handleAddSection}
                 onMoveSection={handleMoveSection}
+                onReparentSection={handleReparentSection}
+                onIndentSection={handleIndentSection}
+                onOutdentSection={handleOutdentSection}
                 onAddParent={handleAddParent}
                 onAddChild={handleAddChild}
                 onUpdateParent={handleUpdateParent}
