@@ -179,8 +179,8 @@ class TestHierarchicalChunker(unittest.TestCase):
 
         # Check that IDs are sequential
         self.assertEqual(reindexed["sections"][0]["id"], f"{reindexed['doc_id']}_s00")
-        self.assertEqual(reindexed["parent_chunks"][0]["parent_chunk_id"], f"{reindexed['doc_id']}_p001")
-        self.assertEqual(reindexed["child_chunks"][0]["chunk_id"], f"{reindexed['doc_id']}_c001")
+        self.assertEqual(reindexed["parent_chunks"][0]["parent_chunk_id"], f"{reindexed['doc_id']}_p0001")
+        self.assertEqual(reindexed["child_chunks"][0]["chunk_id"], f"{reindexed['doc_id']}_c0001")
 
         # Check that cross references are correctly remapped
         first_child = reindexed["child_chunks"][0]
@@ -270,11 +270,11 @@ class TestHierarchicalChunker(unittest.TestCase):
         self.assertEqual(reindexed["sections"][1]["title"], "1장")
         self.assertEqual(reindexed["sections"][2]["title"], "2장")
 
-        # Child on page 2 should become c001
+        # Child on page 2 should become c0001
         self.assertEqual(reindexed["child_chunks"][0]["page_number"], 2)
-        self.assertEqual(reindexed["child_chunks"][0]["chunk_id"], f"{reindexed['doc_id']}_c001")
+        self.assertEqual(reindexed["child_chunks"][0]["chunk_id"], f"{reindexed['doc_id']}_c0001")
         self.assertEqual(reindexed["child_chunks"][1]["page_number"], 5)
-        self.assertEqual(reindexed["child_chunks"][1]["chunk_id"], f"{reindexed['doc_id']}_c002")
+        self.assertEqual(reindexed["child_chunks"][1]["chunk_id"], f"{reindexed['doc_id']}_c0002")
 
     def test_e2e_full_lifecycle_flow(self):
         """
@@ -349,8 +349,8 @@ class TestHierarchicalChunker(unittest.TestCase):
         # 5. Re-index 시뮬레이션
         reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
         self.assertTrue(reindexed["sections"][0]["id"].endswith("_s00"))
-        self.assertTrue(reindexed["parent_chunks"][0]["parent_chunk_id"].endswith("_p001"))
-        self.assertTrue(reindexed["child_chunks"][0]["chunk_id"].endswith("_c001"))
+        self.assertTrue(reindexed["parent_chunks"][0]["parent_chunk_id"].endswith("_p0001"))
+        self.assertTrue(reindexed["child_chunks"][0]["chunk_id"].endswith("_c0001"))
 
         # 6. JSONL 출력 검증
         jsonl_str = chunker.export_to_jsonl(reindexed)

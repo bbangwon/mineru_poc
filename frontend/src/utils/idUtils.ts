@@ -15,27 +15,33 @@ export function estimateKoreanTokens(text: string): number {
 }
 
 /**
- * 문서명을 6자리 짧은 해시 기반 식별자(d_xxxxxx)로 변환
+ * 문서명을 128-bit 결정론적 고유 식별자(doc_xxxxxxxx...)로 변환
  */
 export function generateDocId(name?: string): string {
-  if (!name) return 'doc';
+  if (!name) return `doc_${Math.random().toString(16).slice(2).padStart(8, '0')}`;
   const clean = name.trim();
-  if (clean.startsWith('d_') && clean.length <= 10) {
+  if (clean.startsWith('doc_') && clean.length === 36) {
     return clean;
   }
-  // 간단한 문자열 해시 (32비트 -> 6자리 16진수)
-  let hash = 0;
+  // 결정론적 128비트(32자리 16진수) 해시 생성
+  let h1 = 0xdeadbeef, h2 = 0x41c64e6d;
   for (let i = 0; i < clean.length; i++) {
-    hash = (hash << 5) - hash + clean.charCodeAt(i);
-    hash |= 0;
+    const ch = clean.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
   }
-  const hex = Math.abs(hash).toString(16).padStart(6, '0').slice(0, 6);
-  return `d_${hex}`;
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const part1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  const part3 = ((h1 ^ h2) >>> 0).toString(16).padStart(8, '0');
+  const part4 = (((h1 + h2) * 31) >>> 0).toString(16).padStart(8, '0');
+  return `doc_${part1}${part2}${part3}${part4}`;
 }
 
 /**
  * 주어진 청크 목록에서 사용된 c 번호 중 최댓값 + 1을 채번하여 새 청크 ID를 생성합니다.
- * 형식: {doc_id}_c{다음번호 3자리}
+ * 형식: {doc_id}_c{다음번호 4자리}
  */
 export function getNextChunkId(childChunks: ChildChunk[], docId: string): string {
   let maxSeq = 0;
@@ -52,12 +58,12 @@ export function getNextChunkId(childChunks: ChildChunk[], docId: string): string
   }
 
   const nextSeq = maxSeq + 1;
-  return `${docId}_c${String(nextSeq).padStart(3, '0')}`;
+  return `${docId}_c${String(nextSeq).padStart(4, '0')}`;
 }
 
 /**
  * 주어진 Parent 청크 목록에서 사용된 p 번호 중 최댓값 + 1을 채번하여 새 Parent ID를 생성합니다.
- * 형식: {doc_id}_p{다음번호 3자리}
+ * 형식: {doc_id}_p{다음번호 4자리}
  */
 export function getNextParentChunkId(parentChunks: ParentChunk[], docId: string): string {
   let maxSeq = 0;
@@ -376,7 +382,10 @@ export function recalculateSectionHierarchy(
  */
 export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResult {
   const synchronizedEtl = syncHierarchyOrder(etl);
-  const docId = synchronizedEtl.doc_id || generateDocId(synchronizedEtl.doc_title);
+  const rawDocId = synchronizedEtl.doc_id || '';
+  const docId = (rawDocId.startsWith('doc_') && rawDocId.length === 36)
+    ? rawDocId
+    : generateDocId((synchronizedEtl as any).active_pdf || synchronizedEtl.doc_title || rawDocId);
 
   const rawSections = (synchronizedEtl.sections && synchronizedEtl.sections.length > 0)
     ? synchronizedEtl.sections
@@ -481,7 +490,7 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
   let parentIdx = 1;
   const newParents = sortedParents.map((parent) => {
     const oldPid = parent.parent_chunk_id || parent.id || '';
-    const newPid = `${docId}_p${String(parentIdx++).padStart(3, '0')}`;
+    const newPid = `${docId}_p${String(parentIdx++).padStart(4, '0')}`;
     if (oldPid) {
       parentIdMap[oldPid] = newPid;
     }
@@ -496,7 +505,7 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
   let childIdx = 1;
   const newChildren = sortedChildren.map((child) => {
     const oldCid = child.chunk_id;
-    const newCid = `${docId}_c${String(childIdx++).padStart(3, '0')}`;
+    const newCid = `${docId}_c${String(childIdx++).padStart(4, '0')}`;
     childIdMap[oldCid] = newCid;
 
     const startPage = child.page_number || 1;

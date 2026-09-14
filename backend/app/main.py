@@ -8,6 +8,7 @@ import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _PKG_ROOT = BASE_DIR / "packages" / "rag_embed_core"
@@ -793,6 +794,9 @@ async def reindex_etl_endpoint(req: Optional[Dict[str, Any]] = None):
     if not etl_data or "child_chunks" not in etl_data:
         raise HTTPException(status_code=400, detail="재정렬할 유효한 ETL 결과 데이터가 없습니다.")
 
+    if not etl_data.get("active_pdf") and current_selected_pdf_name:
+        etl_data["active_pdf"] = current_selected_pdf_name
+
     reindexed = HierarchicalChunker.reindex_etl_result(etl_data)
     latest_etl_result = reindexed
     return reindexed
@@ -1010,30 +1014,136 @@ async def get_job_status(task_id: str):
     return job_copy
 
 
+class MergedExportRequest(BaseModel):
+    filenames: List[str]
+
+
 @app.get("/api/etl/export/jsonl")
-async def export_jsonl():
-    """RAG 표준 JSONL 파일 다운로드"""
+async def export_jsonl(filename: Optional[str] = None):
+    """RAG 표준 JSONL 파일 다운로드 (특정 문서 지정 가능)"""
     global latest_etl_result
-    if not latest_etl_result:
-        found = find_latest_content_list()
+    target_data = None
+    target_title = "rag_chunks"
+
+    target_name = filename or current_selected_pdf_name
+    if target_name:
+        stem = Path(target_name).stem
+        found = find_latest_content_list(stem)
         if found:
             file_path, content_list = found
-            chunker = HierarchicalChunker(doc_id="doc_asbestos")
-            latest_etl_result = chunker.chunk_content_list(
-                content_list, doc_title=file_path.parent.parent.name
-            )
-        else:
-            raise HTTPException(
-                status_code=404, detail="No ETL data available to export"
-            )
+            p_dir = file_path.parent
+            edited_path = p_dir / "rag_chunks_edited.json"
+            doc_id = HierarchicalChunker.generate_doc_id(target_name)
+            if edited_path.exists():
+                try:
+                    with open(edited_path, "r", encoding="utf-8") as f:
+                        target_data = json.load(f)
+                except Exception:
+                    pass
+            if not target_data:
+                doc_id = HierarchicalChunker.generate_doc_id(target_name)
+                chunker = HierarchicalChunker(doc_id=doc_id)
+                target_data = chunker.chunk_content_list(content_list, doc_title=stem)
+            target_title = stem
 
-    chunker = HierarchicalChunker(doc_id=latest_etl_result.get("doc_id", "doc"))
-    jsonl_content = chunker.export_to_jsonl(latest_etl_result)
+    if not target_data:
+        if latest_etl_result:
+            target_data = latest_etl_result
+        else:
+            found = find_latest_content_list()
+            if found:
+                file_path, content_list = found
+                chunker = HierarchicalChunker(
+                    doc_id=HierarchicalChunker.generate_doc_id(file_path.parent.parent.name)
+                )
+                target_data = chunker.chunk_content_list(
+                    content_list, doc_title=file_path.parent.parent.name
+                )
+            else:
+                raise HTTPException(
+                    status_code=404, detail="No ETL data available to export"
+                )
+
+    doc_id = target_data.get("doc_id") or HierarchicalChunker.generate_doc_id(target_title)
+    chunker = HierarchicalChunker(doc_id=doc_id)
+    jsonl_content = chunker.export_to_jsonl(target_data)
+
+    safe_target_filename = f"{target_title}_rag_chunks.jsonl"
+    encoded_target_filename = quote(safe_target_filename)
 
     return Response(
         content=jsonl_content,
         media_type="application/x-ndjson; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="rag_chunks.jsonl"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="rag_chunks.jsonl"; filename*=utf-8\'\'{encoded_target_filename}',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@app.post("/api/etl/export/jsonl/merged")
+async def export_jsonl_merged(req: MergedExportRequest):
+    """선택된 복수 파싱 문서의 청크들을 고유 doc_id(128-bit UUID) 및 4자리 chunk_id로 병합하여 단일 JSONL로 내보내기"""
+    if not req.filenames:
+        raise HTTPException(
+            status_code=400, detail="병합 내보내기할 파일 목록(filenames)이 비어있습니다."
+        )
+
+    all_jsonl_lines: List[str] = []
+    processed_count = 0
+
+    for fname in req.filenames:
+        stem = Path(fname).stem
+        found = find_latest_content_list(stem)
+        if not found:
+            continue
+        c_path, c_list = found
+        p_dir = c_path.parent
+        edited_path = p_dir / "rag_chunks_edited.json"
+
+        # 고유 doc_id 산출 (128-bit RFC 4122 UUID v5 결정론적 고유 ID)
+        doc_id = HierarchicalChunker.generate_doc_id(fname)
+        chunker = HierarchicalChunker(doc_id=doc_id)
+
+        etl_data = None
+        if edited_path.exists():
+            try:
+                with open(edited_path, "r", encoding="utf-8") as f:
+                    etl_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"수정본 로드 실패 ({edited_path}): {e}")
+
+        if not etl_data:
+            doc_id = HierarchicalChunker.generate_doc_id(fname)
+            chunker = HierarchicalChunker(doc_id=doc_id)
+            etl_data = chunker.chunk_content_list(c_list, doc_title=stem)
+
+        doc_id = etl_data.get("doc_id") or HierarchicalChunker.generate_doc_id(fname)
+        chunker = HierarchicalChunker(doc_id=doc_id)
+        jsonl_str = chunker.export_to_jsonl(etl_data)
+        for line in jsonl_str.strip().split("\n"):
+            line = line.strip()
+            if line:
+                all_jsonl_lines.append(line)
+        processed_count += 1
+
+    if not all_jsonl_lines:
+        raise HTTPException(
+            status_code=404,
+            detail="선택된 문서들에서 유효한 파싱 청크 데이터를 찾을 수 없습니다."
+        )
+
+    merged_content = "\n".join(all_jsonl_lines) + "\n"
+    out_filename = f"merged_rag_chunks_{processed_count}docs.jsonl"
+    encoded_out_filename = quote(out_filename)
+
+    return Response(
+        content=merged_content,
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out_filename}"; filename*=utf-8\'\'{encoded_out_filename}',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )
 
 

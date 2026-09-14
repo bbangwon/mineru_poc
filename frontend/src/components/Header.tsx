@@ -151,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onReindex}
               disabled={isResetting || isSaving}
               className="hidden xl:inline-flex text-xs font-semibold px-2.5 py-2 rounded-xl transition border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="전체 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬"
+              title="전체 섹션(s00~)과 청크(c0001~) ID를 문서 순서 및 128-bit 고유 규격으로 일괄 재정렬"
             >
               <ListOrdered className="w-3.5 h-3.5 text-indigo-500" />
               <span>ID 재정렬</span>

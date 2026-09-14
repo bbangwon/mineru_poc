@@ -2117,7 +2117,7 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     type="button"
                     onClick={onReindexIds}
                     className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-medium transition cursor-pointer flex items-center gap-1 ml-auto"
-                    title="전체 섹션(s01~)과 청크(c001~) ID를 문서 순서대로 일괄 재정렬"
+                    title="전체 섹션(s00~)과 청크(c0001~) ID를 문서 순서 및 128-bit 고유 규격으로 일괄 재정렬"
                   >
                     <ListOrdered className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
                     <span>ID 재정렬</span>

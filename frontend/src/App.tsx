@@ -29,6 +29,7 @@ import {
   getParserConfig,
   saveParserConfig,
   resetParserConfig,
+  reindexEtlResult,
 } from './api/client';
 import {
   getNextChunkId,
@@ -2508,21 +2509,39 @@ export function App() {
     showToast(`🧹 ${emptyChunks.length}개의 빈 청크를 임베딩 제외 처리했습니다.`);
   };
 
-  // 12. Re-index All IDs Handler (3-Tier ID 일괄 물리적 순서 재정렬)
-  const handleReindexIds = () => {
+  // 12. Re-index All IDs Handler (3-Tier ID 일괄 물리적 순서 재정렬 및 128-bit 최신 규격 업그레이드)
+  const handleReindexIds = async () => {
     if (!etlData) return;
     const secCount = (etlData.sections || etlData.parent_sections || []).length;
     const parentCount = (etlData.parent_chunks || []).length;
     const childCount = etlData.child_chunks.length;
     const confirmed = window.confirm(
-      `전체 계층(Section s01~, Parent p001~, Child c001~) ID를 문서 물리적 순서대로 일괄 재정렬하시겠습니까?\n(총 ${secCount}개 섹션, ${parentCount}개 Parent, ${childCount}개 Child)\n\n※ 분할/병합/섹션 재지정 후 불연속해진 번호가 깨끗하게 순차적으로 정돈됩니다.`
+      `전체 계층(Section s00~, Parent p0001~, Child c0001~) ID를 문서 물리적 순서대로 재정렬하시겠습니까?\n(총 ${secCount}개 섹션, ${parentCount}개 Parent, ${childCount}개 Child)\n\n※ 분할/병합/섹션 재지정 후 번호가 깨끗하게 순차적으로 정돈되며, 128-bit 풀 UUID 및 4자리 패딩 규격으로 자동 최신화됩니다.`
     );
     if (!confirmed) return;
 
-    const reindexed = reindexEtlData(etlData);
-    setEtlData(reindexed);
-    setIsDirty(true);
-    showToast('전체 계층(Section/Parent/Child) ID가 물리적 순서대로 성공적으로 재정렬되었습니다.');
+    try {
+      const payload: any = {
+        ...etlData,
+        active_pdf: etlData.active_pdf || selectedPdf,
+        doc_title: etlData.doc_title || selectedPdf,
+      };
+      const res = await reindexEtlResult(payload);
+      const normalized = normalizeEtlData(res);
+      setEtlData(normalized);
+      setIsDirty(true);
+      showToast('전체 계층 ID가 128-bit 고유 규격으로 성공적으로 재정렬되었습니다.');
+    } catch (err: any) {
+      console.error('Reindex API error, falling back to local:', err);
+      const reindexed = reindexEtlData({
+        ...etlData,
+        active_pdf: etlData.active_pdf || selectedPdf,
+        doc_title: etlData.doc_title || selectedPdf,
+      });
+      setEtlData(reindexed);
+      setIsDirty(true);
+      showToast('전체 계층 ID가 재정렬되었습니다.');
+    }
   };
 
   // 13. Save ETL Result to Backend & Disk

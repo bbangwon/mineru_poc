@@ -109,6 +109,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [etlTargetItem, setEtlTargetItem] = useState<PdfItem | null>(null);
   const [isEtlModalOpen, setIsEtlModalOpen] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [isExportingMerged, setIsExportingMerged] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File size formatter
@@ -134,6 +136,79 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       return true;
     });
   }, [pdfList, searchQuery, statusFilter]);
+
+  // 파싱 완료된 대상 파일 목록 (필터된 목록 기준)
+  const completedDocsInFiltered = useMemo(() => {
+    return filteredList.filter((item) => item.etl_status === 'completed').map((item) => item.filename);
+  }, [filteredList]);
+
+  // 완료 문서 전체 선택 여부
+  const isAllCompletedSelected = useMemo(() => {
+    return completedDocsInFiltered.length > 0 && completedDocsInFiltered.every((f) => selectedDocs.has(f));
+  }, [completedDocsInFiltered, selectedDocs]);
+
+  // 개별 문서 선택 토글
+  const handleToggleSelectDoc = (filename: string) => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(filename)) {
+        next.delete(filename);
+      } else {
+        next.add(filename);
+      }
+      return next;
+    });
+  };
+
+  // 파싱 완료 문서 전체 선택 / 전체 해제 토글
+  const handleToggleSelectAll = () => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (isAllCompletedSelected) {
+        completedDocsInFiltered.forEach((f) => next.delete(f));
+      } else {
+        completedDocsInFiltered.forEach((f) => next.add(f));
+      }
+      return next;
+    });
+  };
+
+  // 선택 해제
+  const handleClearSelectedDocs = () => {
+    setSelectedDocs(new Set());
+  };
+
+  // 선택 문서 통합 JSONL 다운로드
+  const handleDownloadMergedJsonl = async () => {
+    if (selectedDocs.size === 0) return;
+    try {
+      setIsExportingMerged(true);
+      const res = await fetch('/api/etl/export/jsonl/merged', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filenames: Array.from(selectedDocs) }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: '다운로드 실패' }));
+        throw new Error(errData.detail || '통합 JSONL 파일 생성에 실패했습니다.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `merged_rag_chunks_${selectedDocs.size}docs.jsonl`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || '통합 JSONL 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsExportingMerged(false);
+    }
+  };
 
   // Handle Drag & Drop
   const handleDragOver = (e: React.DragEvent) => {
@@ -622,11 +697,73 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
 
+        {/* Bulk Actions Banner (When 1 or more documents are selected) */}
+        {selectedDocs.size > 0 && (
+          <div className="mx-4 sm:mx-6 mb-3 p-3 bg-indigo-50/90 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 duration-200 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-2xs">
+                {selectedDocs.size}
+              </span>
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {selectedDocs.size}개 문서 선택됨
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  128-bit UUID 고유 식별자(A안)로 충돌 없이 안전하게 단일 JSONL로 병합됩니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleClearSelectedDocs}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                선택 해제
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadMergedJsonl}
+                disabled={isExportingMerged}
+                className="px-4 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isExportingMerged ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>병합 생성 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>선택 문서 통합 JSONL 다운로드 ({selectedDocs.size})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table View */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-950/60 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 select-none">
+                <th className="py-3 px-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllCompletedSelected}
+                    onChange={handleToggleSelectAll}
+                    disabled={completedDocsInFiltered.length === 0}
+                    title={
+                      completedDocsInFiltered.length === 0
+                        ? '선택 가능한 파싱 완료 문서가 없습니다'
+                        : isAllCompletedSelected
+                        ? '전체 선택 해제'
+                        : '파싱 완료 문서 전체 선택'
+                    }
+                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-40 align-middle"
+                  />
+                </th>
                 <th className="py-3 px-4 w-2/5">PDF 문서 정보</th>
                 <th className="py-3 px-3">ETL 파싱 상태</th>
                 <th className="py-3 px-3">추출 청크 & 구조</th>
@@ -638,7 +775,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
               {filteredList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-500 dark:text-slate-400">
                     <FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm font-medium">검색 조건에 맞는 PDF 문서가 없습니다.</p>
                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">상단의 '신규 PDF 등록' 버튼을 눌러 새 문서를 추가하세요.</p>
@@ -654,11 +791,28 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     <tr
                       key={item.filename}
                       className={`group transition-colors ${
-                        isCurrent
-                          ? 'bg-indigo-50/60 dark:bg-indigo-950/20 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+                        selectedDocs.has(item.filename)
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/30'
+                          : isCurrent
+                          ? 'bg-indigo-50/40 dark:bg-indigo-950/15 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
                           : 'hover:bg-slate-50 dark:hover:bg-slate-800/30'
                       }`}
                     >
+                      {/* Selection Checkbox */}
+                      <td className="py-3.5 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedDocs.has(item.filename)}
+                          onChange={() => handleToggleSelectDoc(item.filename)}
+                          disabled={item.etl_status !== 'completed'}
+                          title={
+                            item.etl_status !== 'completed'
+                              ? '파싱 완료된 문서만 선택할 수 있습니다'
+                              : '통합 JSONL 다운로드 대상 선택'
+                          }
+                          className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed align-middle"
+                        />
+                      </td>
                       {/* 1. PDF Info */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-start gap-2.5">
@@ -673,14 +827,16 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`font-semibold truncate max-w-sm sm:max-w-md ${
+                              <button
+                                type="button"
+                                onClick={() => onSelectPdf(item.filename)}
+                                className={`font-semibold truncate max-w-sm sm:max-w-md text-left cursor-pointer hover:underline ${
                                   isCurrent ? 'text-indigo-600 dark:text-indigo-300 font-bold' : 'text-slate-900 dark:text-slate-200'
                                 }`}
-                                title={item.filename}
+                                title={`${item.filename} (클릭하여 현재 작업 문서로 선택)`}
                               >
                                 {item.filename}
-                              </span>
+                              </button>
                               {isCurrent && (
                                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-semibold shrink-0">
                                   현재 작업 중
@@ -865,14 +1021,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           {/* Direct JSONL Export Button */}
                           {item.etl_status === 'completed' && (
                             <a
-                              href="/api/etl/export/jsonl"
-                              onClick={async (e) => {
-                                if (item.filename !== selectedPdf) {
-                                  e.preventDefault();
-                                  await onSelectPdf(item.filename);
-                                  window.location.href = '/api/etl/export/jsonl';
-                                }
-                              }}
+                              href={`/api/etl/export/jsonl?filename=${encodeURIComponent(item.filename)}`}
                               className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs"
                               title="RAG 표준 JSONL 다운로드"
                             >

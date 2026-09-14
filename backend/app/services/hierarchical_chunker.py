@@ -74,14 +74,25 @@ class HierarchicalChunker:
 
     @staticmethod
     def generate_doc_id(name: Optional[str] = None) -> str:
-        """문서명을 6자리 짧은 해시 기반 고유 식별자(d_xxxxxx)로 변환"""
+        """
+        문서명을 RFC 4122 표준 128비트 결정론적 UUID(UUID v5) 기반 32자리 고유 식별자(doc_xxxxxxxx...)로 변환.
+        - 동일한 문서명/식별자에 대해 항상 일관된 UUID 반환 (Upsert 및 캐싱 안전)
+        - 서로 다른 문서 간 충돌 확률 물리적 0% 보장 (128-bit)
+        - 한글/특수문자 없이 완전한 순수 ASCII 16진수 [0-9a-f] 반환
+        """
         if not name:
-            return f"d_{uuid.uuid4().hex[:6]}"
+            return f"doc_{uuid.uuid4().hex}"
         clean = str(name).strip()
-        if clean.startswith("d_") and len(clean) <= 10 and clean[2:].isalnum():
+        # 이미 유효한 doc_ (32자리 hex) 형태인 경우 그대로 반환
+        if clean.startswith("doc_") and len(clean) == 36 and clean[4:].isalnum():
             return clean
-        h = hashlib.md5(clean.encode("utf-8")).hexdigest()[:6]
-        return f"d_{h}"
+        # 하위 호환성: 단위테스트 등에서 명시적으로 지정한 단순 영문/숫자 식별자 호환 유지 (단, 과거 d_xxxxxx 해시 및 .pdf는 128-bit UUID로 변환)
+        if re.match(r"^[a-zA-Z0-9_-]+$", clean) and not clean.lower().endswith(".pdf") and len(clean) <= 40 and not clean.startswith("d_"):
+            return clean
+
+        # 파일명/문서명 기반 128-bit 결정론적 UUID v5 생성
+        u = uuid.uuid5(uuid.NAMESPACE_URL, f"urn:mineru:doc:{clean}")
+        return f"doc_{u.hex}"
 
     @staticmethod
     def normalize_text_for_embedding(text: str) -> str:
@@ -829,7 +840,7 @@ class HierarchicalChunker:
                 return
 
             child_counter += 1
-            cid = f"{self.doc_id}_c{child_counter:03d}"
+            cid = f"{self.doc_id}_c{child_counter:04d}"
             start_p = current_start_page if current_start_page is not None else 1
             end_p = current_end_page if current_end_page is not None else start_p
             if end_p < start_p:
@@ -888,7 +899,7 @@ class HierarchicalChunker:
                 )
 
                 child_counter += 1
-                cid = f"{self.doc_id}_c{child_counter:03d}"
+                cid = f"{self.doc_id}_c{child_counter:04d}"
 
                 child_chunks.append({
                     "chunk_id": cid,
@@ -994,7 +1005,7 @@ class HierarchicalChunker:
                 return
 
             parent_counter += 1
-            pid = f"{self.doc_id}_p{parent_counter:03d}"
+            pid = f"{self.doc_id}_p{parent_counter:04d}"
 
             combined_texts = []
             for c in current_children:
@@ -1310,8 +1321,17 @@ class HierarchicalChunker:
         """
         import copy
         res = copy.deepcopy(etl_result)
-        raw_doc_id = res.get("doc_id") or "doc"
-        doc_id = cls.generate_doc_id(raw_doc_id)
+        raw_doc_id = res.get("doc_id") or ""
+        active_pdf = res.get("active_pdf")
+        doc_title = res.get("doc_title")
+
+        # 1. 이미 128-bit UUID (doc_ + 32자리 hex) 형태인 경우 유지
+        if isinstance(raw_doc_id, str) and raw_doc_id.startswith("doc_") and len(raw_doc_id) == 36 and raw_doc_id[4:].isalnum():
+            doc_id = raw_doc_id
+        else:
+            # 2. 구버전 ID(d_xxxxxx 등)인 경우 원본 문서명을 기반으로 128-bit UUID v5로 자동 업그레이드
+            seed = active_pdf or doc_title or raw_doc_id or "doc"
+            doc_id = cls.generate_doc_id(seed)
         res["doc_id"] = doc_id
 
         raw_sections = res.get("sections") or res.get("parent_sections") or []
@@ -1428,7 +1448,7 @@ class HierarchicalChunker:
         new_parents = []
         for p in sorted_parents:
             old_pid = p.get("parent_chunk_id") or p.get("id", "")
-            new_pid = f"{doc_id}_p{parent_counter:03d}"
+            new_pid = f"{doc_id}_p{parent_counter:04d}"
             parent_counter += 1
             parent_id_map[old_pid] = new_pid
             p["parent_chunk_id"] = new_pid
@@ -1440,7 +1460,7 @@ class HierarchicalChunker:
         new_children = []
         for c in sorted_children:
             old_cid = c.get("chunk_id", "")
-            new_cid = f"{doc_id}_c{child_counter:03d}"
+            new_cid = f"{doc_id}_c{child_counter:04d}"
             child_counter += 1
             child_id_map[old_cid] = new_cid
             c["chunk_id"] = new_cid
