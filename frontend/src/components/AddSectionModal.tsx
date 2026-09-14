@@ -146,50 +146,32 @@ export const AddSectionModal: React.FC<AddSectionModalProps> = ({
 
           {/* Parent Section Dropdown */}
           <div className="space-y-1.5">
-            <label className="block font-semibold text-slate-700">
-              상위 섹션 지정 (선택)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block font-semibold text-slate-700">
+                상위 섹션 지정 (선택)
+              </label>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                적용 계층: H{level} {level === 1 ? '(대분류)' : level === 2 ? '(중분류)' : level === 3 ? '(소분류)' : `(깊이 ${level})`}
+              </span>
+            </div>
             <select
               value={selectedParentId}
               onChange={(e) => handleParentChange(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800 font-medium cursor-pointer"
             >
-              <option value="">-- 최상위 (루트 계층) --</option>
+              <option value="">-- 최상위 (루트 계층, H1 생성) --</option>
               {parentSections.map((sec) => (
                 <option key={sec.id} value={sec.id}>
                   {sec.breadcrumbs && sec.breadcrumbs.length > 0
                     ? sec.breadcrumbs.join(' > ')
-                    : sec.title}
+                    : sec.title} (H{sec.level})
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1">
               <HelpCircle className="w-3 h-3 shrink-0" />
-              상위 섹션을 지정하면 계층 트리와 브레드크럼이 자동 구성됩니다.
+              상위 섹션을 지정하면 계층 트리(H{level})와 브레드크럼이 자동으로 구성됩니다.
             </p>
-          </div>
-
-          {/* Hierarchy Level */}
-          <div className="space-y-1.5">
-            <label className="block font-semibold text-slate-700">
-              계층 깊이 (Level)
-            </label>
-            <div className="flex items-center gap-2">
-              {[0, 1, 2, 3, 4].map((lvl) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => setLevel(lvl)}
-                  className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                    level === lvl
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {lvl === 0 ? 'H0 (루트)' : `H${lvl}`}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Insertion Position */}
