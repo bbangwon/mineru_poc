@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, HelpCircle, FileText, BookOpen, AlertCircle } from 'lucide-react';
 import type { ParentChunk } from '../types';
-import { formatDisplayParentId } from '../utils/idUtils';
+import { CopyableBadge } from './CopyableBadge';
 
 interface AddChildModalProps {
   isOpen: boolean;
@@ -125,12 +125,12 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
             <div className="space-y-0.5">
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-slate-500 text-[11px]">대상 부모:</span>
-                <span
-                  className="font-mono text-indigo-700 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 cursor-help shrink-0"
-                  title={`전체 Parent ID: ${pid}`}
-                >
-                  {formatDisplayParentId(pid)}
-                </span>
+                <CopyableBadge
+                  id={pid}
+                  type="parent"
+                  titlePrefix="전체 Parent ID"
+                  className="font-mono text-indigo-700 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shrink-0"
+                />
                 <span className="font-bold text-slate-800">
                   {parentChunk.title || '제목 없음'}
                 </span>

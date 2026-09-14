@@ -3,6 +3,7 @@ import { Layers, Table2, AlignLeft, Filter, Search, X, ChevronDown, ChevronUp, F
 import type { ChildChunk, ParentSection, ParentChunk } from '../types';
 import { ChunkCard } from './ChunkCard';
 import { formatDisplayParentId } from '../utils/idUtils';
+import { CopyableBadge } from './CopyableBadge';
 
 interface ChunkExplorerProps {
   chunks: ChildChunk[];
@@ -213,12 +214,14 @@ export const ChunkExplorer: React.FC<ChunkExplorerProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span
-                      className="font-mono text-xs font-bold text-purple-900 cursor-help shrink-0"
-                      title={`전체 Parent ID: ${activeParentChunk.parent_chunk_id || activeParentChunk.id}`}
-                    >
-                      [{formatDisplayParentId(activeParentChunk.parent_chunk_id || activeParentChunk.id)}]
-                    </span>
+                    <CopyableBadge
+                      id={activeParentChunk.parent_chunk_id || activeParentChunk.id}
+                      type="parent"
+                      prefix="["
+                      suffix="]"
+                      titlePrefix="전체 Parent ID"
+                      className="text-xs font-bold text-purple-900 shrink-0"
+                    />
                     <span className="text-xs font-semibold text-slate-800">
                       {activeParentChunk.title || '상위 부모 문맥 (Parent Context)'}
                     </span>

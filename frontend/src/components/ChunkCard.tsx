@@ -2,12 +2,8 @@ import React from 'react';
 import { Table2, AlignLeft, FileCode2, ChevronRight, MapPin, ShieldCheck, Image as ImageIcon, ExternalLink, Scale, Edit3, EyeOff, CheckCircle2, AlertTriangle, Info, Trash2, Sparkles } from 'lucide-react';
 import type { ChildChunk, ParentSection } from '../types';
 import { formatChunkPageFull } from '../utils/pageUtils';
-import {
-  estimateKoreanTokens,
-  formatDisplayChunkId,
-  formatDisplayParentId,
-  formatDisplaySectionId,
-} from '../utils/idUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
+import { CopyableBadge } from './CopyableBadge';
 
 interface ChunkCardProps {
   chunk: ChildChunk;
@@ -108,12 +104,12 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
             </span>
           ) : null}
 
-          <span
-            className="font-mono text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded cursor-help shrink-0"
-            title={`전체 청크 ID: ${chunk.chunk_id}`}
-          >
-            {formatDisplayChunkId(chunk.chunk_id)}
-          </span>
+          <CopyableBadge
+            id={chunk.chunk_id}
+            type="chunk"
+            titlePrefix="전체 청크 ID"
+            className="text-[11px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80 shrink-0"
+          />
           <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
             {formatChunkPageFull(chunk)}
           </span>
@@ -233,18 +229,24 @@ export const ChunkCard: React.FC<ChunkCardProps> = ({
 
       {/* Footer Info */}
       <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-        <span>
-          Parent:{' '}
-          <strong
-            className="text-slate-600 dark:text-slate-300 cursor-help"
-            title={`전체 Parent ID: ${chunk.parent_chunk_id || chunk.parent_id}`}
-          >
-            {formatDisplayParentId(chunk.parent_chunk_id || chunk.parent_id)}
-          </strong>
+        <span className="flex items-center gap-1 flex-wrap">
+          <span>Parent:</span>
+          <CopyableBadge
+            id={chunk.parent_chunk_id || chunk.parent_id}
+            type="parent"
+            titlePrefix="전체 Parent ID"
+            className="text-[10px] font-bold text-slate-600 dark:text-slate-300 px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60"
+          />
           {chunk.section_id && (
-            <span title={`전체 Section ID: ${chunk.section_id}`}>
-              {' '}| Section: {formatDisplaySectionId(chunk.section_id)}
-            </span>
+            <>
+              <span>| Section:</span>
+              <CopyableBadge
+                id={chunk.section_id}
+                type="section"
+                titlePrefix="전체 Section ID"
+                className="text-[10px] text-slate-500 dark:text-slate-400 px-1 py-0.2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+              />
+            </>
           )}
           {parentSection && ` (${parentSection.title})`}
         </span>

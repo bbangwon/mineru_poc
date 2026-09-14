@@ -17,13 +17,10 @@ import {
 } from 'lucide-react';
 import type { ChildChunk, ParentSection, ParentChunk, LLMRefineResponse } from '../types';
 import { syncChunkPageMetadata, formatChunkPageFull } from '../utils/pageUtils';
-import {
-  estimateKoreanTokens,
-  formatDisplayChunkId,
-  formatDisplayParentId,
-} from '../utils/idUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
 import { RefineDiffModal } from './RefineDiffModal';
+import { CopyableBadge } from './CopyableBadge';
 
 interface ChunkEditModalProps {
   chunk: ChildChunk | null;
@@ -185,12 +182,12 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900">청크 내용 & 메타데이터 편집</h3>
-                <span
-                  className="font-mono text-xs px-2 py-0.5 bg-slate-200 text-slate-700 rounded font-semibold cursor-help shrink-0"
-                  title={`전체 청크 ID: ${chunk.chunk_id}`}
-                >
-                  {formatDisplayChunkId(chunk.chunk_id)}
-                </span>
+                <CopyableBadge
+                  id={chunk.chunk_id}
+                  type="chunk"
+                  titlePrefix="전체 청크 ID"
+                  className="text-xs px-2 py-0.5 bg-slate-200 text-slate-700 rounded font-semibold border border-slate-300 shrink-0"
+                />
                 {chunk.is_edited && (
                   <span className="text-[11px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded border border-amber-200">
                     기존 수정됨
@@ -220,12 +217,12 @@ export const ChunkEditModal: React.FC<ChunkEditModalProps> = ({
                 <FolderTree className="w-3.5 h-3.5 text-indigo-600" />
                 <span>상위 Parent:</span>
               </span>
-              <span
-                className="font-mono text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 cursor-help shrink-0"
-                title={`전체 Parent ID: ${chunk.parent_chunk_id || chunk.parent_id || 'p001'}`}
-              >
-                {formatDisplayParentId(chunk.parent_chunk_id || chunk.parent_id || 'p001')}
-              </span>
+              <CopyableBadge
+                id={chunk.parent_chunk_id || chunk.parent_id || 'p001'}
+                type="parent"
+                titlePrefix="전체 Parent ID"
+                className="text-[11px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shrink-0"
+              />
               {currentParent?.title && (
                 <span className="text-slate-700 font-medium truncate max-w-xs">
                   · {currentParent.title}

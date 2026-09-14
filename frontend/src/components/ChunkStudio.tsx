@@ -66,6 +66,7 @@ import {
 } from '../utils/idUtils';
 import { refineChunkText } from '../api/client';
 import { RefineDiffModal } from './RefineDiffModal';
+import { CopyableBadge } from './CopyableBadge';
 
 interface ChunkStudioProps {
   parentSections: ParentSection[];
@@ -2234,12 +2235,13 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                     {/* Parent Container Box Header */}
                     <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-200/80 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <span
-                          className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700/80 shadow-2xs shrink-0 cursor-help"
-                          title={`전체 Parent ID: ${pid}`}
-                        >
-                          Parent: {formatDisplayParentId(pid)}
-                        </span>
+                        <CopyableBadge
+                          id={pid}
+                          type="parent"
+                          prefix="Parent: "
+                          titlePrefix="전체 Parent ID"
+                          className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700/80 shadow-2xs shrink-0"
+                        />
                         {parent.title && (
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={parent.title}>
                             {parent.title}
@@ -2459,12 +2461,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                                   </span>
                                 )}
 
-                                <span
-                                  className="font-mono text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-semibold shrink-0 cursor-help"
-                                  title={`전체 청크 ID: ${chunk.chunk_id}`}
-                                >
-                                  {formatDisplayChunkId(chunk.chunk_id)}
-                                </span>
+                                <CopyableBadge
+                                  id={chunk.chunk_id}
+                                  type="chunk"
+                                  titlePrefix="전체 청크 ID"
+                                  className="text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-semibold shrink-0"
+                                />
 
                                 <span className="text-[10px] text-slate-400 font-mono">
                                   {formatChunkPage(chunk)}
@@ -2632,12 +2634,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">3열: 에디터</h2>
-                      <span
-                        className="font-mono text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded shrink-0 cursor-help"
-                        title={`전체 청크 ID: ${activeChunk.chunk_id}`}
-                      >
-                        {formatDisplayChunkId(activeChunk.chunk_id)}
-                      </span>
+                      <CopyableBadge
+                        id={activeChunk.chunk_id}
+                        type="chunk"
+                        titlePrefix="전체 청크 ID"
+                        className="text-[11px] font-bold px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded shrink-0 border border-slate-300 dark:border-slate-700"
+                      />
                       {activeChunk.is_edited && (
                         <span className="text-[10px] bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-bold px-1.5 py-0.2 rounded shrink-0">
                           수정됨
@@ -2751,12 +2753,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         <FolderTree className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>상위 Parent:</span>
                       </span>
-                      <span
-                        className="font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700 shrink-0 cursor-help"
-                        title={`전체 Parent ID: ${activeParentChunk.parent_chunk_id || activeParentChunk.id}`}
-                      >
-                        {formatDisplayParentId(activeParentChunk.parent_chunk_id || activeParentChunk.id)}
-                      </span>
+                      <CopyableBadge
+                        id={activeParentChunk.parent_chunk_id || activeParentChunk.id}
+                        type="parent"
+                        titlePrefix="전체 Parent ID"
+                        className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-700 shrink-0"
+                      />
                       {activeParentChunk.title && (
                         <span className="text-slate-700 dark:text-slate-200 font-medium truncate max-w-xs">
                           · {activeParentChunk.title}
@@ -2845,12 +2847,12 @@ export const ChunkStudio: React.FC<ChunkStudioProps> = ({
                         소속 섹션 재할당
                       </span>
                       {activeChunk.parent_chunk_id && (
-                        <span
-                          className="font-mono text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-1.5 py-0.2 rounded shrink-0 cursor-help truncate max-w-[120px]"
-                          title={`상위 Parent ID: ${activeChunk.parent_chunk_id}`}
-                        >
-                          {formatDisplayParentId(activeChunk.parent_chunk_id)}
-                        </span>
+                        <CopyableBadge
+                          id={activeChunk.parent_chunk_id}
+                          type="parent"
+                          titlePrefix="상위 Parent ID"
+                          className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-1.5 py-0.2 rounded shrink-0 border border-indigo-200/50 dark:border-indigo-800/50 truncate max-w-[120px]"
+                        />
                       )}
                     </label>
                     <select

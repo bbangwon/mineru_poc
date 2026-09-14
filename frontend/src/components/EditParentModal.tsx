@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Edit3, FolderTree, AlertCircle, Trash2 } from 'lucide-react';
 import type { ParentChunk, SectionNode } from '../types';
-import { formatDisplayParentId } from '../utils/idUtils';
+import { CopyableBadge } from './CopyableBadge';
 
 interface EditParentModalProps {
   isOpen: boolean;
@@ -87,9 +87,15 @@ export const EditParentModal: React.FC<EditParentModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">Parent(부모 청크) 수정</h3>
-              <p className="text-xs text-slate-500 font-mono cursor-help" title={`전체 Parent ID: ${pid}`}>
-                ID: {formatDisplayParentId(pid)}
-              </p>
+              <div className="mt-0.5">
+                <CopyableBadge
+                  id={pid}
+                  type="parent"
+                  prefix="ID: "
+                  titlePrefix="전체 Parent ID"
+                  className="text-xs text-slate-500 hover:text-indigo-600 px-1 py-0.2 rounded hover:bg-slate-100"
+                />
+              </div>
             </div>
           </div>
           <button

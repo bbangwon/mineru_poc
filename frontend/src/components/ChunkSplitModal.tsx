@@ -10,7 +10,8 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { ChildChunk } from '../types';
-import { estimateKoreanTokens, formatDisplayChunkId } from '../utils/idUtils';
+import { estimateKoreanTokens } from '../utils/idUtils';
+import { CopyableBadge } from './CopyableBadge';
 
 interface ChunkSplitModalProps {
   chunk: ChildChunk | null;
@@ -135,12 +136,12 @@ export const ChunkSplitModal: React.FC<ChunkSplitModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900">청크 분할 (Split Chunk)</h3>
-                <span
-                  className="font-mono text-xs font-bold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md cursor-help shrink-0"
-                  title={`전체 청크 ID: ${chunk.chunk_id}`}
-                >
-                  {formatDisplayChunkId(chunk.chunk_id)}
-                </span>
+                <CopyableBadge
+                  id={chunk.chunk_id}
+                  type="chunk"
+                  titlePrefix="전체 청크 ID"
+                  className="text-xs font-bold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md border border-slate-300 shrink-0"
+                />
                 <span className="text-xs text-slate-400 font-mono">
                   {chunk.page_end && chunk.page_end > chunk.page_number
                     ? `p.${chunk.page_number}~p.${chunk.page_end}`
