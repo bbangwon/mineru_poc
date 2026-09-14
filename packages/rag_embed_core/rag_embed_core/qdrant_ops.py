@@ -43,13 +43,14 @@ class QdrantManager:
 
         if self.config.mode == "embedded":
             logger.info(f"Qdrant Embedded 모드로 클라이언트 초기화 (경로: {self.config.local_path})")
-            self._client = QdrantClient(path=self.config.local_path)
+            self._client = QdrantClient(path=self.config.local_path, check_compatibility=False)
         else:
             logger.info(f"Qdrant Remote 모드로 클라이언트 초기화 (URL: {self.config.url})")
             self._client = QdrantClient(
                 url=self.config.url,
                 api_key=self.config.api_key,
                 timeout=10,
+                check_compatibility=False,
             )
         return self._client
 
@@ -261,7 +262,7 @@ class QdrantManager:
         doc_name: str,
         collection_name: Optional[str] = None,
     ) -> bool:
-        """특정 doc_id 또는 doc_title을 가진 포인트를 컬렉션에서 삭제합니다."""
+        """특정 doc_id, doc_title, breadcrumbs를 가진 포인트를 컬렉션에서 삭제합니다."""
         client = self.get_client()
         col_name = collection_name or self.config.collection_name
         try:
@@ -275,6 +276,7 @@ class QdrantManager:
                         should=[
                             models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_name)),
                             models.FieldCondition(key="doc_title", match=models.MatchValue(value=doc_name)),
+                            models.FieldCondition(key="breadcrumbs", match=models.MatchValue(value=doc_name)),
                         ]
                     )
                 ),
@@ -284,6 +286,48 @@ class QdrantManager:
         except Exception as e:
             logger.warning(f"Qdrant 포인트 삭제 실패 (문서: {doc_name}): {e}")
             return False
+
+    def get_indexed_doc_names(self, collection_name: Optional[str] = None) -> List[str]:
+        """컬렉션에 저장된 문서 식별자(breadcrumbs[0], doc_id, title, chunk_id 접두사 등) 목록을 조회합니다."""
+        client = self.get_client()
+        col_name = collection_name or self.config.collection_name
+        try:
+            if not client.collection_exists(col_name):
+                return []
+
+            doc_names = set()
+            offset = None
+            while True:
+                records, next_offset = client.scroll(
+                    collection_name=col_name,
+                    limit=250,
+                    offset=offset,
+                    with_payload=["breadcrumbs", "doc_id", "title", "chunk_id"],
+                    with_vectors=False,
+                )
+                for r in records:
+                    p = r.payload or {}
+                    bc = p.get("breadcrumbs")
+                    if bc and isinstance(bc, list) and len(bc) > 0:
+                        doc_names.add(str(bc[0]).strip())
+                    doc_id = p.get("doc_id")
+                    if doc_id:
+                        doc_names.add(str(doc_id).strip())
+                    title = p.get("title")
+                    if title:
+                        doc_names.add(str(title).strip())
+                    cid = p.get("chunk_id", "")
+                    if cid and "_c" in cid:
+                        doc_names.add(cid.rsplit("_c", 1)[0].strip())
+
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            return sorted(list(doc_names))
+        except Exception as e:
+            logger.warning(f"Qdrant 색인 문서 목록 조회 실패 ({col_name}): {e}")
+            raise e
 
     def get_collection_info(self, collection_name: Optional[str] = None) -> Dict[str, Any]:
         """컬렉션 통계 정보(포인트 수 등)를 반환합니다."""

@@ -28,18 +28,28 @@ export interface PdfItem {
   last_modified?: string | null;
 }
 
+export interface QdrantStatus {
+  connected: boolean;
+  mode?: string;
+  collection?: string;
+  error?: string | null;
+  used_cache?: boolean;
+}
+
 export interface GlobalStats {
   total_pdfs: number;
   parsed_pdfs: number;
   running_jobs: number;
   total_chunks: number;
   embedded_pdfs: number;
+  qdrant_connected?: boolean;
 }
 
 export interface PdfListResponse {
   pdfs: PdfItem[];
   current: string | null;
   global_stats?: GlobalStats;
+  qdrant_status?: QdrantStatus;
 }
 
 

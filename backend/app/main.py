@@ -281,37 +281,34 @@ def extract_pipeline_meta_from_path(file_path: Path) -> tuple[Optional[str], Opt
 
 
 _doc_stats_cache: Dict[str, tuple[float, dict, Optional[str], Optional[str], Optional[str]]] = {}
-_embedded_cache_mtime: float = 0
-_embedded_doc_names: set[str] = set()
+_qdrant_cache_time: float = 0
+_qdrant_cached_names: set[str] = set()
+_qdrant_cached_status: Dict[str, Any] = {"connected": True, "error": None}
+
+
+def get_embedded_doc_status(ttl_seconds: float = 4.0) -> tuple[set[str], Dict[str, Any]]:
+    """Qdrant 실시간 조회 및 설정오류/연결실패 시 로컬 매니페스트 캐시 fallback을 수행합니다."""
+    global _qdrant_cache_time, _qdrant_cached_names, _qdrant_cached_status
+    now = time.time()
+    if (now - _qdrant_cache_time) < ttl_seconds and _qdrant_cached_names:
+        return _qdrant_cached_names, _qdrant_cached_status
+
+    try:
+        cfg = get_qdrant_config()
+        doc_names, status_info = embedding_svc.get_indexed_doc_names_with_fallback(cfg)
+        norm_names = {normalize_text(n) for n in doc_names}
+        _qdrant_cached_names = norm_names
+        _qdrant_cached_status = status_info
+        _qdrant_cache_time = now
+        return norm_names, status_info
+    except Exception as e:
+        logger.error(f"색인 상태 확인 중 예외 발생: {e}")
+        return _qdrant_cached_names, {"connected": False, "error": str(e), "used_cache": True}
 
 
 def get_embedded_doc_names() -> set[str]:
-    """Qdrant 또는 rag_chunks_embedded.json에 인덱싱된 문서 이름/ID 집합 반환"""
-    global _embedded_cache_mtime, _embedded_doc_names
-    if not EMBEDDED_JSON_PATH.exists():
-        return set()
-    try:
-        current_mtime = EMBEDDED_JSON_PATH.stat().st_mtime
-        if current_mtime == _embedded_cache_mtime:
-            return _embedded_doc_names
-
-        with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            found_names = set()
-            for chunk in data.get("chunks", []):
-                payload = chunk.get("payload", {})
-                bc = payload.get("breadcrumbs", [])
-                if bc and isinstance(bc, list) and len(bc) > 0:
-                    found_names.add(normalize_text(str(bc[0]).strip()))
-                doc_id = payload.get("doc_id")
-                if doc_id:
-                    found_names.add(normalize_text(str(doc_id).strip()))
-            _embedded_cache_mtime = current_mtime
-            _embedded_doc_names = found_names
-            return found_names
-    except Exception as e:
-        print(f"Failed to read embedded doc names: {e}")
-        return set()
+    names, _ = get_embedded_doc_status()
+    return names
 
 
 @app.get("/api/pdf/list")
@@ -329,7 +326,7 @@ async def list_pdfs():
     if not current_selected_pdf_name and pdf_files:
         current_selected_pdf_name = pdf_files[0].name
 
-    embedded_names = get_embedded_doc_names()
+    embedded_names, qdrant_status = get_embedded_doc_status()
 
     items = []
     total_parsed_count = 0
@@ -528,9 +525,15 @@ async def list_pdfs():
         "running_jobs": total_running_jobs,
         "total_chunks": total_chunks_count,
         "embedded_pdfs": total_embedded_count,
+        "qdrant_connected": qdrant_status.get("connected", True),
     }
 
-    return {"pdfs": items, "current": current_selected_pdf_name, "global_stats": global_stats}
+    return {
+        "pdfs": items,
+        "current": current_selected_pdf_name,
+        "global_stats": global_stats,
+        "qdrant_status": qdrant_status,
+    }
 
 
 @app.post("/api/pdf/select")

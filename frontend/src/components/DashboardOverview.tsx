@@ -477,14 +477,33 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Card 4: Qdrant Indexed */}
         <div
           onClick={onOpenQdrantModal}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 rounded-2xl p-4 flex items-center gap-3.5 shadow-2xs cursor-pointer transition-all group"
-          title="Qdrant 연결 및 컬렉션 설정 열기"
+          className={`bg-white dark:bg-slate-900 border ${
+            globalStats?.qdrant_connected === false
+              ? 'border-amber-400 dark:border-amber-600/70 hover:border-amber-500'
+              : 'border-slate-200 dark:border-slate-800 hover:border-amber-500/50'
+          } rounded-2xl p-4 flex items-center gap-3.5 shadow-2xs cursor-pointer transition-all group`}
+          title={
+            globalStats?.qdrant_connected === false
+              ? 'Qdrant 접속 불가 (로컬 캐시 기준 표시 중) - 클릭하여 설정 확인'
+              : 'Qdrant 연결 및 컬렉션 설정 열기'
+          }
         >
           <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 group-hover:bg-amber-500/25 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 transition-colors">
             <Database className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Qdrant 색인 완료</p>
+            <div className="flex items-center justify-between gap-1">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Qdrant 색인</p>
+              {globalStats?.qdrant_connected === false ? (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                  캐시 모드
+                </span>
+              ) : globalStats?.qdrant_connected === true ? (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                  정상 연결
+                </span>
+              ) : null}
+            </div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-300 font-mono">{metrics.embeddedPdfs}</span>
               <span className="text-xs text-slate-500">개 문서 색인됨</span>

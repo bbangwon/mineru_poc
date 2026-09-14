@@ -4,7 +4,7 @@ import sys
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 # 패키지 경로를 sys.path에 등록하여 서브프로세스 및 uvicorn 환경 호환 보장
 _PKG_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "packages" / "rag_embed_core"
@@ -25,6 +25,28 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 EMBEDDED_JSON_PATH = OUTPUT_DIR / "rag_chunks_embedded.json"
+INDEXED_DOCS_MANIFEST_PATH = OUTPUT_DIR / "qdrant_indexed_docs.json"
+
+
+def load_indexed_docs_manifest() -> Dict[str, Any]:
+    """Qdrant에 적재된 문서 메타데이터 매니페스트(초경량 JSON) 로드"""
+    if INDEXED_DOCS_MANIFEST_PATH.exists():
+        try:
+            with open(INDEXED_DOCS_MANIFEST_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"인덱스 매니페스트 로드 실패: {e}")
+    return {"collection_name": "", "documents": {}, "last_synced_at": ""}
+
+
+def save_indexed_docs_manifest(data: Dict[str, Any]) -> None:
+    """Qdrant 적재 문서 메타데이터 매니페스트 영속화"""
+    try:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(INDEXED_DOCS_MANIFEST_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"인덱스 매니페스트 저장 실패: {e}")
 
 # 싱글톤 인코더 캐시
 _kiwi_encoder: Optional[KiwiSparseEncoder] = None
@@ -65,6 +87,71 @@ class EmbeddingService:
     def test_connection(self, config: Optional[QdrantConfig] = None) -> Dict[str, Any]:
         manager = self.get_manager(config)
         return manager.test_connection()
+
+    def get_indexed_doc_names_with_fallback(
+        self,
+        config: Optional[QdrantConfig] = None,
+    ) -> Tuple[Set[str], Dict[str, Any]]:
+        """Qdrant에서 실제 색인된 문서 식별자 목록을 실시간 조회하며,
+        Qdrant 설정 오류/접속 불가 시 로컬 매니페스트 캐시로 안전하게 fallback 처리합니다."""
+        cfg = config or get_qdrant_config()
+        target_col = cfg.collection_name
+        manifest = load_indexed_docs_manifest()
+
+        # 1. Qdrant 직접 실시간 조회 시도
+        try:
+            manager = self.get_manager(cfg)
+            live_names = manager.get_indexed_doc_names(collection_name=target_col)
+
+            # 성공 시 로컬 매니페스트 동기화
+            docs_dict = manifest.get("documents", {})
+            for name in live_names:
+                if name not in docs_dict:
+                    docs_dict[name] = {
+                        "doc_id": name,
+                        "indexed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "source": "qdrant_live_sync",
+                    }
+            manifest["collection_name"] = target_col
+            manifest["documents"] = docs_dict
+            manifest["last_synced_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            save_indexed_docs_manifest(manifest)
+
+            return set(live_names), {
+                "connected": True,
+                "mode": cfg.mode,
+                "collection": target_col,
+                "error": None,
+                "used_cache": False,
+            }
+        except Exception as e:
+            logger.warning(f"Qdrant 연결/조회 실패 ({e}). 로컬 인덱스 매니페스트 캐시로 fallback 합니다.")
+
+            # 2. 접속 실패 시 로컬 매니페스트 및 기존 레거시 JSON 캐시에서 복원
+            cached_names: Set[str] = set(manifest.get("documents", {}).keys())
+
+            if EMBEDDED_JSON_PATH.exists():
+                try:
+                    with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
+                        leg_data = json.load(f)
+                        for chunk in leg_data.get("chunks", []):
+                            payload = chunk.get("payload", {})
+                            bc = payload.get("breadcrumbs", [])
+                            if bc and isinstance(bc, list) and len(bc) > 0:
+                                cached_names.add(str(bc[0]).strip())
+                            did = payload.get("doc_id")
+                            if did:
+                                cached_names.add(str(did).strip())
+                except Exception:
+                    pass
+
+            return cached_names, {
+                "connected": False,
+                "mode": cfg.mode,
+                "collection": target_col,
+                "error": str(e),
+                "used_cache": True,
+            }
 
     def embed_and_upsert(
         self,
@@ -163,9 +250,17 @@ class EmbeddingService:
             chunk_meta.pop("image_path", None)
             chunk_meta.pop("image_url", None)
 
+            # doc_id 보정 (비어있을 경우 breadcrumbs[0] 또는 chunk_id prefix 활용)
+            doc_id_val = chunk.get("doc_id") or ""
+            if not doc_id_val:
+                if breadcrumbs and isinstance(breadcrumbs, list) and len(breadcrumbs) > 0:
+                    doc_id_val = str(breadcrumbs[0]).strip()
+                elif "_c" in cid:
+                    doc_id_val = cid.rsplit("_c", 1)[0].strip()
+
             payload = {
                 "chunk_id": cid,
-                "doc_id": chunk.get("doc_id", ""),
+                "doc_id": doc_id_val,
                 "parent_chunk_id": pid,
                 "parent_text": p_text,
                 "section_id": chunk.get("section_id", ""),
@@ -216,7 +311,39 @@ class EmbeddingService:
             batch_size=cfg.batch_size,
         )
 
-        # 4. JSON 파일 저장
+        # 4. 경량 인덱스 매니페스트 갱신 (단일 거대 파일 비대화 방지)
+        try:
+            manifest = load_indexed_docs_manifest()
+            if cfg.recreate_collection:
+                manifest["documents"] = {}
+
+            # 현재 색인된 주 문서명 추출
+            primary_doc_name = None
+            if active_chunks:
+                first_bc = active_chunks[0].get("breadcrumbs") or []
+                if first_bc and isinstance(first_bc, list) and len(first_bc) > 0:
+                    primary_doc_name = str(first_bc[0]).strip()
+                if not primary_doc_name:
+                    primary_doc_name = active_chunks[0].get("doc_id")
+
+            if not primary_doc_name:
+                primary_doc_name = target_col
+
+            docs_dict = manifest.get("documents", {})
+            docs_dict[primary_doc_name] = {
+                "doc_id": primary_doc_name,
+                "chunks_count": len(points),
+                "indexed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "collection": target_col,
+            }
+            manifest["collection_name"] = target_col
+            manifest["documents"] = docs_dict
+            manifest["last_synced_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            save_indexed_docs_manifest(manifest)
+        except Exception as e:
+            logger.warning(f"인덱스 매니페스트 갱신 실패: {e}")
+
+        # 단일 배치 다운로드/내보내기용 최신 파일 기록
         try:
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             with open(EMBEDDED_JSON_PATH, "w", encoding="utf-8") as f:
@@ -359,6 +486,24 @@ class EmbeddingService:
                 logger.info(f"rag_chunks_embedded.json에서 {json_deleted_count}개 청크 정리 완료 (문서: {doc_name})")
             except Exception as e:
                 logger.warning(f"rag_chunks_embedded.json 청크 정리 실패 (문서: {doc_name}): {e}")
+
+        # 3. 로컬 매니페스트에서 해당 문서 삭제
+        try:
+            manifest = load_indexed_docs_manifest()
+            docs_dict = manifest.get("documents", {})
+            norm_doc = unicodedata.normalize("NFC", doc_name) if doc_name else ""
+            to_remove = [
+                k for k in docs_dict
+                if unicodedata.normalize("NFC", k) == norm_doc or norm_doc in unicodedata.normalize("NFC", k)
+            ]
+            for k in to_remove:
+                docs_dict.pop(k, None)
+            manifest["documents"] = docs_dict
+            manifest["last_synced_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            save_indexed_docs_manifest(manifest)
+            logger.info(f"인덱스 매니페스트에서 문서 '{doc_name}' 정리 완료")
+        except Exception as e:
+            logger.warning(f"매니페스트 문서 정리 실패 (문서: {doc_name}): {e}")
 
         return {
             "success": True,
