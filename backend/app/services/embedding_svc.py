@@ -473,7 +473,10 @@ class EmbeddingService:
                     norm_doc = unicodedata.normalize("NFC", doc_name) if doc_name else ""
                     norm_targets = [unicodedata.normalize("NFC", str(x)) for x in [cid, ctitle, first_bc] if x]
                     norm_chunk_id = unicodedata.normalize("NFC", str(chunk.get("chunk_id", "")))
-                    if norm_doc in norm_targets or norm_doc in norm_chunk_id:
+                    matched = (norm_doc in norm_targets or norm_doc in norm_chunk_id)
+                    if not matched and len(norm_doc) >= 10:
+                        matched = any(len(t) >= 10 and (norm_doc.startswith(t) or t.startswith(norm_doc)) for t in norm_targets)
+                    if matched:
                         json_deleted_count += 1
                         continue
                     filtered_chunks.append(chunk)

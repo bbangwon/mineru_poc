@@ -494,9 +494,36 @@ async def list_pdfs():
             if stats_info:
                 total_chunks_count += stats_info.get("total_chunks", 0)
 
-        # 3. 임베딩 여부 확인 (유니코드 정규화 비교)
+        # 3. 임베딩 여부 확인 (유니코드 정규화 및 축약/접두사 호환 비교)
         norm_embedded = {normalize_text(n) for n in embedded_names}
-        is_embedded = (normalize_text(stem) in norm_embedded) or (normalize_text(p.name) in norm_embedded)
+        norm_stem = normalize_text(stem)
+        norm_p_name = normalize_text(p.name)
+
+        # 1) 완전 일치 검사
+        is_embedded = (norm_stem in norm_embedded) or (norm_p_name in norm_embedded)
+
+        # 2) 긴 파일명 축약/접두사 호환 검사 (MinerU UTF-8 바이트 자름 등 대응)
+        if not is_embedded:
+            for ne in norm_embedded:
+                if len(ne) >= 10 and (norm_stem.startswith(ne) or ne.startswith(norm_stem)):
+                    is_embedded = True
+                    break
+
+        # 3) 산출물 디렉터리 경로/content_info 기반 확인
+        if not is_embedded and content_info:
+            c_path, _ = content_info
+            for part in c_path.parts:
+                norm_part = normalize_text(part)
+                if norm_part in norm_embedded:
+                    is_embedded = True
+                    break
+                for ne in norm_embedded:
+                    if len(ne) >= 10 and (norm_part.startswith(ne) or ne.startswith(norm_part)):
+                        is_embedded = True
+                        break
+                if is_embedded:
+                    break
+
         if is_embedded:
             total_embedded_count += 1
 
@@ -614,6 +641,10 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
     if delete_vectors:
         try:
             vector_res = embedding_svc.delete_document_vectors(stem)
+            for d_name in list(deleted_folders):
+                sub_stem = Path(d_name).name
+                if sub_stem and sub_stem != stem and sub_stem not in ["ocr", "auto", "txt"]:
+                    embedding_svc.delete_document_vectors(sub_stem)
             _embedded_cache_mtime = 0  # 캐시 강제 무효화
         except Exception as e:
             print(f"벡터 데이터 삭제 실패 ({stem}): {e}")
