@@ -1228,6 +1228,76 @@ class HierarchicalChunker:
         return sections
 
     @classmethod
+    def sync_section_page_ranges(
+        cls,
+        sections: List[Dict[str, Any]],
+        child_chunks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        섹션들의 page_range를 소속 청크 및 하위 자식 섹션들을 바탕으로 상향식(Bottom-up) 동기화합니다.
+        - 직속 Child 청크가 있는 경우: min(page_number) ~ max(page_end or page_number)
+        - 하위 자식 섹션들이 있는 경우: 하위 섹션들의 page_range 최소~최대값을 재귀 취합
+        - 청크도 없고 하위 섹션도 없는 경우: 기존 page_range 유지
+        """
+        if not sections:
+            return []
+
+        child_map = {c.get("chunk_id"): c for c in child_chunks}
+        children_by_parent: Dict[str, List[Dict[str, Any]]] = {}
+        for s in sections:
+            psid = s.get("parent_section_id")
+            if psid:
+                children_by_parent.setdefault(psid, []).append(s)
+
+        computed_ranges: Dict[str, List[int]] = {}
+        visiting = set()
+
+        def compute_range(sec: Dict[str, Any]) -> List[int]:
+            sid = sec.get("id", "")
+            if sid in computed_ranges:
+                return computed_ranges[sid]
+            if sid in visiting:
+                return sec.get("page_range", [1, 1])
+            visiting.add(sid)
+
+            min_page = float("inf")
+            max_page = float("-inf")
+
+            # 1. 직속 Child 청크들의 페이지 범위
+            for cid in sec.get("child_chunk_ids", []):
+                c = child_map.get(cid)
+                if c:
+                    start = c.get("page_number", 1)
+                    end = c.get("page_end", start)
+                    if start < min_page:
+                        min_page = start
+                    if end > max_page:
+                        max_page = end
+
+            # 2. 하위 자식 섹션들의 페이지 범위 (재귀)
+            for sub in children_by_parent.get(sid, []):
+                sub_range = compute_range(sub)
+                if sub_range[0] < min_page:
+                    min_page = sub_range[0]
+                if sub_range[1] > max_page:
+                    max_page = sub_range[1]
+
+            visiting.remove(sid)
+
+            if min_page != float("inf") and max_page != float("-inf"):
+                res_range = [int(min_page), int(max_page)]
+            else:
+                res_range = sec.get("page_range", [1, 1])
+
+            computed_ranges[sid] = res_range
+            return res_range
+
+        for s in sections:
+            s["page_range"] = compute_range(s)
+
+        return sections
+
+    @classmethod
     def reindex_etl_result(cls, etl_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         수동 편집(분할/병합/섹션 재지정) 후 불연속해진 모든 ID를
@@ -1281,7 +1351,10 @@ class HierarchicalChunker:
         raw_parents = synced_parents
         raw_children = synced_children
 
-        # 1. 물리적 페이지 순서 기반 정렬 (안정 정렬)
+        # 1. 소속 청크 및 하위 섹션 범위를 반영한 page_range 동기화
+        raw_sections = cls.sync_section_page_ranges(raw_sections, raw_children)
+
+        # 2. 물리적 페이지 순서 및 계층 구조(Tree DFS) 기반 정렬 (안정 정렬)
         root_sec = None
         normal_sections = []
         for s in raw_sections:
@@ -1290,8 +1363,44 @@ class HierarchicalChunker:
             else:
                 normal_sections.append(s)
 
-        normal_sections.sort(key=lambda s: s.get("page_range", [1, 1])[0])
-        sorted_sections = ([root_sec] if root_sec else []) + normal_sections
+        root_id = root_sec.get("id") if root_sec else None
+        children_map: Dict[str, List[Dict[str, Any]]] = {}
+        for s in normal_sections:
+            pid = s.get("parent_section_id") or root_id or "__root__"
+            children_map.setdefault(pid, []).append(s)
+
+        # 동일 부모 내 형제 섹션들끼리 page_range[0] 기준 안정 정렬
+        for s_list in children_map.values():
+            s_list.sort(key=lambda item: item.get("page_range", [1, 1])[0])
+
+        sorted_sections = []
+        if root_sec:
+            sorted_sections.append(root_sec)
+
+        visited_sids = set()
+        if root_sec:
+            visited_sids.add(root_sec.get("id"))
+
+        def traverse(parent_id: str):
+            for child in children_map.get(parent_id, []):
+                cid = child.get("id")
+                if cid not in visited_sids:
+                    visited_sids.add(cid)
+                    sorted_sections.append(child)
+                    traverse(cid)
+
+        if root_id:
+            traverse(root_id)
+
+        # 부모 연결이 끊어졌거나 매핑에서 누락된 고아 섹션들 보존 (페이지 순 정렬)
+        remaining = [s for s in normal_sections if s.get("id") not in visited_sids]
+        remaining.sort(key=lambda s: s.get("page_range", [1, 1])[0])
+        for r in remaining:
+            rid = r.get("id")
+            if rid not in visited_sids:
+                visited_sids.add(rid)
+                sorted_sections.append(r)
+                traverse(rid)
 
         # Parent는 page_range[0] 기준 정렬
         sorted_parents = sorted(raw_parents, key=lambda p: p.get("page_range", [1, 1])[0])

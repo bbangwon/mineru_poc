@@ -172,7 +172,7 @@ export function syncHierarchyOrder(etl: HierarchicalEtlResult): HierarchicalEtlR
   }
 
   // 3. 각 섹션의 child_chunk_ids 동기화
-  const updatedSections: SectionNode[] = sections.map((sec) => {
+  const updatedSectionsWithChildren: SectionNode[] = sections.map((sec) => {
     const secPids = sec.parent_chunk_ids || [];
     const secChildIds: string[] = [];
     for (const pid of secPids) {
@@ -191,6 +191,9 @@ export function syncHierarchyOrder(etl: HierarchicalEtlResult): HierarchicalEtlR
     };
   });
 
+  // 4. 소속 청크 및 하위 섹션(Children)을 반영한 page_range 상향식(Bottom-up) 동기화
+  const updatedSections = syncSectionPageRanges(updatedSectionsWithChildren, orderedChildren);
+
   return {
     ...etl,
     sections: updatedSections,
@@ -198,6 +201,91 @@ export function syncHierarchyOrder(etl: HierarchicalEtlResult): HierarchicalEtlR
     parent_chunks: orderedParents,
     child_chunks: orderedChildren,
   };
+}
+
+/**
+ * 섹션들의 page_range를 소속 청크 및 하위 자식 섹션들을 바탕으로 상향식(Bottom-up) 동기화합니다.
+ * - 직속 Child 청크가 있는 경우: 해당 청크들의 min(page_number) ~ max(page_end || page_number)
+ * - 하위 자식 섹션들이 있는 경우: 하위 섹션들의 page_range 최소~최대값을 재귀적으로 취합
+ * - 청크도 없고 하위 섹션도 없는 경우: 기존 page_range 유지
+ */
+export function syncSectionPageRanges(
+  sections: SectionNode[],
+  childChunks: ChildChunk[]
+): SectionNode[] {
+  if (!sections || sections.length === 0) return [];
+
+  const childMap = new Map<string, ChildChunk>();
+  for (const c of childChunks) {
+    childMap.set(c.chunk_id, c);
+  }
+
+  // 부모 섹션 ID -> 직속 자식 섹션들 매핑
+  const childrenByParent = new Map<string, SectionNode[]>();
+  for (const s of sections) {
+    if (s.parent_section_id) {
+      if (!childrenByParent.has(s.parent_section_id)) {
+        childrenByParent.set(s.parent_section_id, []);
+      }
+      childrenByParent.get(s.parent_section_id)!.push(s);
+    }
+  }
+
+  const computedRanges = new Map<string, [number, number]>();
+  const visiting = new Set<string>();
+
+  function computeRange(sec: SectionNode): [number, number] {
+    if (computedRanges.has(sec.id)) {
+      return computedRanges.get(sec.id)!;
+    }
+    if (visiting.has(sec.id)) {
+      return sec.page_range && sec.page_range.length === 2 ? sec.page_range : [1, 1];
+    }
+    visiting.add(sec.id);
+
+    let minPage = Infinity;
+    let maxPage = -Infinity;
+
+    // 1. 직속 Child 청크들의 페이지 범위
+    const cids = sec.child_chunk_ids || [];
+    for (const cid of cids) {
+      const c = childMap.get(cid);
+      if (c) {
+        const start = c.page_number || 1;
+        const end = c.page_end || start;
+        if (start < minPage) minPage = start;
+        if (end > maxPage) maxPage = end;
+      }
+    }
+
+    // 2. 하위 자식 섹션들의 페이지 범위 (재귀)
+    const childSecs = childrenByParent.get(sec.id) || [];
+    for (const sub of childSecs) {
+      const subRange = computeRange(sub);
+      if (subRange[0] < minPage) minPage = subRange[0];
+      if (subRange[1] > maxPage) maxPage = subRange[1];
+    }
+
+    visiting.delete(sec.id);
+
+    let resultRange: [number, number];
+    if (minPage !== Infinity && maxPage !== -Infinity) {
+      resultRange = [minPage, maxPage];
+    } else {
+      resultRange = sec.page_range && sec.page_range.length === 2 ? sec.page_range : [1, 1];
+    }
+
+    computedRanges.set(sec.id, resultRange);
+    return resultRange;
+  }
+
+  return sections.map((s) => {
+    const range = computeRange(s);
+    return {
+      ...s,
+      page_range: range,
+    };
+  });
 }
 
 /**
@@ -296,7 +384,7 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
   const rawParents = synchronizedEtl.parent_chunks || [];
   const rawChildren = synchronizedEtl.child_chunks || [];
 
-  // 1. 물리적 페이지 순서 기반 정렬 (안정 정렬)
+  // 1. 물리적 페이지 순서 및 계층 구조(Tree DFS) 기반 정렬 (안정 정렬)
   let rootSec: SectionNode | null = null;
   const normalSections: SectionNode[] = [];
   for (const s of rawSections) {
@@ -307,12 +395,61 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
     }
   }
 
-  normalSections.sort((a, b) => {
+  // 부모 ID -> 자식 섹션 목록 매핑 (계층 트리 구조 보존)
+  const rootId = rootSec?.id;
+  const childrenMap = new Map<string, SectionNode[]>();
+  for (const s of normalSections) {
+    const pId = s.parent_section_id || rootId || '__root__';
+    if (!childrenMap.has(pId)) {
+      childrenMap.set(pId, []);
+    }
+    childrenMap.get(pId)!.push(s);
+  }
+
+  // 동일 부모 내 형제(Sibling) 섹션들끼리 page_range[0] 기준으로 안정 정렬
+  for (const list of childrenMap.values()) {
+    list.sort((a, b) => {
+      const pA = a.page_range ? a.page_range[0] : 1;
+      const pB = b.page_range ? b.page_range[0] : 1;
+      return pA - pB;
+    });
+  }
+
+  // DFS 재귀 순회로 계층 및 페이지 순서대로 평탄화 (부모 직후에 자식들 순서대로 배치)
+  const sortedSections: SectionNode[] = [];
+  if (rootSec) sortedSections.push(rootSec);
+
+  const visitedSecIds = new Set<string>();
+  if (rootSec) visitedSecIds.add(rootSec.id);
+
+  function traverse(parentId: string) {
+    const children = childrenMap.get(parentId) || [];
+    for (const child of children) {
+      if (!visitedSecIds.has(child.id)) {
+        visitedSecIds.add(child.id);
+        sortedSections.push(child);
+        traverse(child.id);
+      }
+    }
+  }
+
+  if (rootId) {
+    traverse(rootId);
+  }
+  // 혹시 부모 연결이 없거나 매핑에서 누락된 고아 섹션들 보존 (페이지 순 정렬)
+  const remaining = normalSections.filter((s) => !visitedSecIds.has(s.id));
+  remaining.sort((a, b) => {
     const pA = a.page_range ? a.page_range[0] : 1;
     const pB = b.page_range ? b.page_range[0] : 1;
     return pA - pB;
   });
-  const sortedSections = rootSec ? [rootSec, ...normalSections] : normalSections;
+  for (const r of remaining) {
+    if (!visitedSecIds.has(r.id)) {
+      visitedSecIds.add(r.id);
+      sortedSections.push(r);
+      traverse(r.id);
+    }
+  }
 
   const sortedParents = [...rawParents].sort((a, b) => {
     const pA = a.page_range ? a.page_range[0] : 1;

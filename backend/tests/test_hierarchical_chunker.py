@@ -783,6 +783,54 @@ class TestHierarchicalChunker(unittest.TestCase):
         child = reindexed["child_chunks"][0]
         self.assertEqual(child["breadcrumbs"], ["가이드라인", "개요"])
 
+    def test_reindex_container_section_page_range_and_order(self):
+        """
+        직속 청크가 없고 하위 자식 섹션만 있는 컨테이너 섹션이
+        초기 page_range=[1, 1]로 잘못되어 있더라도,
+        하위 섹션들의 page_range([11, 15])를 상향식으로 반영하여
+        I, II, III 뒤에 올바른 순서로 재정렬되는지 검증합니다.
+        """
+        etl_res = {
+            "doc_id": "container_test",
+            "doc_title": "컨테이너테스트",
+            "strategy": "general",
+            "sections": [
+                {"id": "doc_s00", "title": "루트", "level": 0},
+                {"id": "doc_s02", "title": "I. 목적", "level": 1, "parent_section_id": "doc_s00", "page_range": [3, 3], "parent_chunk_ids": [], "child_chunk_ids": ["c01"]},
+                {"id": "doc_s03", "title": "II. 주요내용", "level": 1, "parent_section_id": "doc_s00", "page_range": [3, 3], "parent_chunk_ids": [], "child_chunk_ids": ["c02"]},
+                {"id": "doc_s04", "title": "III. 적용기준", "level": 1, "parent_section_id": "doc_s00", "page_range": [5, 5], "parent_chunk_ids": [], "child_chunk_ids": ["c03"]},
+                # IV는 직속 청크 없이 page_range=[1, 1]로 잘못 지정된 상태
+                {"id": "doc_s01", "title": "IV. 조사 및 판정절차", "level": 1, "parent_section_id": "doc_s00", "page_range": [1, 1], "parent_chunk_ids": [], "child_chunk_ids": []},
+                {"id": "doc_s07", "title": "1. 재해조사 절차", "level": 2, "parent_section_id": "doc_s01", "page_range": [11, 11], "parent_chunk_ids": [], "child_chunk_ids": ["c04"]},
+                {"id": "doc_s08", "title": "2. 판정절차", "level": 2, "parent_section_id": "doc_s01", "page_range": [14, 15], "parent_chunk_ids": [], "child_chunk_ids": ["c05"]},
+            ],
+            "parent_chunks": [],
+            "child_chunks": [
+                {"chunk_id": "c01", "section_id": "doc_s02", "page_number": 3, "text": "목적 내용"},
+                {"chunk_id": "c02", "section_id": "doc_s03", "page_number": 3, "text": "주요 내용"},
+                {"chunk_id": "c03", "section_id": "doc_s04", "page_number": 5, "text": "적용 내용"},
+                {"chunk_id": "c04", "section_id": "doc_s07", "page_number": 11, "text": "조사 내용"},
+                {"chunk_id": "c05", "section_id": "doc_s08", "page_number": 14, "page_end": 15, "text": "판정 내용"},
+            ]
+        }
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+        sec_titles = [s["title"] for s in reindexed["sections"]]
+
+        # IV가 1위가 아닌 I, II, III 뒤에 올바르게 배치되었는지 검증
+        self.assertEqual(sec_titles, [
+            "루트",
+            "I. 목적",
+            "II. 주요내용",
+            "III. 적용기준",
+            "IV. 조사 및 판정절차",
+            "1. 재해조사 절차",
+            "2. 판정절차"
+        ])
+
+        # IV 섹션의 page_range가 하위 섹션 범위를 반영하여 [11, 15]로 동기화되었는지 검증
+        iv_sec = next(s for s in reindexed["sections"] if s["title"] == "IV. 조사 및 판정절차")
+        self.assertEqual(iv_sec["page_range"], [11, 15])
+
 
 if __name__ == "__main__":
     unittest.main()
