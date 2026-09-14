@@ -54,6 +54,13 @@ class HierarchicalChunker:
     RE_ARTICLE = re.compile(r'^\s*(제\s*\d+\s*조(?:의\s*\d+)?)(?:\s*\(([^)]+)\))?')
     RE_APPENDIX = re.compile(r'^\s*(\[(?:별표|별지)(?:\s*제?\d+호?(?:의\d+)?)?\]|\b별표\s*\d+|\b별지\s*제?\d+호(?:\s*서식)?)')
 
+    # 일반/공문서 번호 체계 정규식
+    RE_ROMAN_NUM = re.compile(r'^\s*(?:[IVXLCDM]+|[Ⅰ-Ⅻ])[\.\s]')          # I. II. III. Ⅳ. 등 (대분류)
+    RE_ARABIC_SUB_NUM = re.compile(r'^\s*\d+\.\d+')                      # 1.1, 1.2 등 (하위 번호)
+    RE_ARABIC_NUM = re.compile(r'^\s*\d+[\.\s]')                         # 1. 2. 3. 등 (중분류/대분류)
+    RE_KOREAN_CHAR = re.compile(r'^\s*[가-하][\.\s]')                     # 가. 나. 다. 등 (소분류)
+    RE_PAREN_NUM = re.compile(r'^\s*\(\d+\)')                            # (1) (2) 등 (세분류)
+
     # 법률 조항/항·호 경계 정규식
     RE_LEGAL_SPLIT = re.compile(
         r'(?=[①-⑳])|'                              # 항 번호 경계
@@ -429,6 +436,17 @@ class HierarchicalChunker:
                         continue
                     level = b_content.get("level", 1)
 
+                    clean_title = title_text.strip()
+                    if self.RE_ROMAN_NUM.match(clean_title) or self.RE_PART.match(clean_title) or self.RE_CHAPTER.match(clean_title):
+                        level = 1
+                    elif self.RE_ARABIC_SUB_NUM.match(clean_title):
+                        level = 3
+                    elif self.RE_KOREAN_CHAR.match(clean_title) or self.RE_PAREN_NUM.match(clean_title) or self.RE_ARTICLE.match(clean_title):
+                        level = 3
+                    elif self.RE_ARABIC_NUM.match(clean_title) or self.RE_SECTION.match(clean_title):
+                        has_roman_in_stack = any(h[0] == 1 for h in heading_stack)
+                        level = 2 if has_roman_in_stack else min(level, 2)
+
                     if level <= 2:
                         section_counter += 1
                         sec_id = f"{self.doc_id}_s{section_counter:02d}"
@@ -545,6 +563,7 @@ class HierarchicalChunker:
                 ]
                 sec["full_text"] = "\n\n".join(p["text"] for p in sec_parents)
 
+        self.recalculate_section_hierarchy(sections, doc_title=doc_title)
         stats = self._calculate_stats(sections, all_parent_chunks, all_child_chunks)
 
         return {
@@ -760,6 +779,7 @@ class HierarchicalChunker:
                 ]
                 sec["full_text"] = "\n\n".join(p["text"] for p in sec_parents)
 
+        self.recalculate_section_hierarchy(sections, doc_title=doc_title)
         stats = self._calculate_stats(sections, all_parent_chunks, all_child_chunks)
 
         return {
@@ -1135,6 +1155,79 @@ class HierarchicalChunker:
         return "\n".join(lines)
 
     @classmethod
+    def recalculate_section_hierarchy(
+        cls,
+        sections: List[Dict[str, Any]],
+        doc_title: str = ""
+    ) -> List[Dict[str, Any]]:
+        """
+        부모-자식 트리 구조(parent_section_id)를 바탕으로
+        전역 계층 레벨(level: H0 -> H1 -> H2 -> H3)과 breadcrumbs를 일괄 재계산합니다.
+        - 루트 섹션: level = 0, breadcrumbs = [root.title]
+        - 직속 자식: level = 1, breadcrumbs = [root.title, sec.title]
+        - 깊이 N:   level = N, breadcrumbs = [ancestors..., sec.title]
+        """
+        if not sections:
+            return []
+
+        # 1. 루트 섹션 식별 (level==0, _s00, _root, 또는 parent_section_id 없는 첫 항목)
+        root_sec = None
+        for s in sections:
+            sid = str(s.get("id", ""))
+            if s.get("level", 0) == 0 or sid.endswith("_s00") or sid.endswith("_root") or not s.get("parent_section_id"):
+                root_sec = s
+                break
+
+        if not root_sec and sections:
+            root_sec = sections[0]
+
+        root_id = root_sec.get("id") if root_sec else None
+
+        # 2. 빠른 조회를 위한 id map
+        sec_map: Dict[str, Dict[str, Any]] = {str(s.get("id", "")): s for s in sections if s.get("id")}
+
+        # 3. 트리 탐색 및 레벨/브레드크럼 재계산
+        for s in sections:
+            sid = str(s.get("id", ""))
+            if s is root_sec or sid == root_id:
+                s["level"] = 0
+                title = s.get("title") or doc_title or "문서"
+                s["breadcrumbs"] = [title]
+                s["parent_section_id"] = None
+                continue
+
+            chain = []
+            curr = s
+            visited = {sid}
+
+            while curr:
+                pid = curr.get("parent_section_id")
+                if not pid or pid not in sec_map or pid in visited:
+                    break
+                visited.add(pid)
+                parent = sec_map[pid]
+                chain.append(parent)
+                if parent is root_sec or str(parent.get("id", "")) == root_id:
+                    break
+                curr = parent
+
+            ancestors = list(reversed(chain))
+
+            # 루트 섹션이 조상 체인의 맨 앞에 없으면 루트를 최상위 부모로 연결 (고아 섹션 보호)
+            if root_sec and (not ancestors or (ancestors[0] is not root_sec and str(ancestors[0].get("id", "")) != root_id)):
+                ancestors = [root_sec] + ancestors
+
+            calculated_level = len(ancestors)
+            breadcrumbs = [a.get("title", "") for a in ancestors] + [s.get("title", "")]
+            final_parent_id = ancestors[-1].get("id") if ancestors else root_id
+
+            s["level"] = calculated_level
+            s["breadcrumbs"] = breadcrumbs
+            s["parent_section_id"] = final_parent_id
+
+        return sections
+
+    @classmethod
     def reindex_etl_result(cls, etl_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         수동 편집(분할/병합/섹션 재지정) 후 불연속해진 모든 ID를
@@ -1275,10 +1368,23 @@ class HierarchicalChunker:
                 child_id_map[cid] for cid in sec.get("child_chunk_ids", []) if cid in child_id_map
             ]
 
+        # 4. 전역 계층 레벨 및 breadcrumbs 일괄 재계산
+        cls.recalculate_section_hierarchy(new_sections, doc_title=res.get("doc_title", ""))
+
+        section_obj_map = {s.get("id"): s for s in new_sections if s.get("id")}
+
         for p in new_parents:
             old_sid = p.get("section_id")
             if old_sid and old_sid in section_id_map:
                 p["section_id"] = section_id_map[old_sid]
+
+            sec = section_obj_map.get(p.get("section_id"))
+            if sec and sec.get("breadcrumbs"):
+                p_title = p.get("title")
+                if p_title and p_title != sec.get("title"):
+                    p["breadcrumbs"] = sec["breadcrumbs"] + [p_title]
+                else:
+                    p["breadcrumbs"] = list(sec["breadcrumbs"])
 
             p["child_chunk_ids"] = [
                 child_id_map[cid] for cid in p.get("child_chunk_ids", []) if cid in child_id_map
@@ -1293,6 +1399,10 @@ class HierarchicalChunker:
             old_sid = c.get("section_id")
             if old_sid and old_sid in section_id_map:
                 c["section_id"] = section_id_map[old_sid]
+
+            sec = section_obj_map.get(c.get("section_id"))
+            if sec and sec.get("breadcrumbs"):
+                c["breadcrumbs"] = list(sec["breadcrumbs"])
 
         res["sections"] = new_sections
         res["parent_sections"] = new_sections

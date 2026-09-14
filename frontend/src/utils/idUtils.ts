@@ -201,12 +201,90 @@ export function syncHierarchyOrder(etl: HierarchicalEtlResult): HierarchicalEtlR
 }
 
 /**
+ * 부모-자식 트리 구조(parent_section_id)를 바탕으로
+ * 전역 계층 레벨(level: H0 -> H1 -> H2 -> H3)과 breadcrumbs를 일괄 재계산합니다.
+ * - 루트 섹션: level = 0, breadcrumbs = [root.title]
+ * - 직속 자식: level = 1, breadcrumbs = [root.title, sec.title]
+ * - 깊이 N:   level = N, breadcrumbs = [ancestors..., sec.title]
+ */
+export function recalculateSectionHierarchy(
+  sections: SectionNode[],
+  docTitle?: string
+): SectionNode[] {
+  if (!sections || sections.length === 0) return [];
+
+  // 1. 루트 섹션 식별 (level===0, _s00, _root, 또는 parent_section_id 없는 첫 항목)
+  let rootSec = sections.find(
+    (s) => s.level === 0 || s.id.endsWith('_s00') || s.id.endsWith('_root') || !s.parent_section_id
+  );
+  if (!rootSec && sections.length > 0) {
+    rootSec = sections[0];
+  }
+  const rootId = rootSec?.id;
+
+  const secMap = new Map<string, SectionNode>();
+  for (const s of sections) {
+    secMap.set(s.id, s);
+  }
+
+  // 2. 각 섹션의 깊이(depth) 및 브레드크럼 재계산
+  return sections.map((s) => {
+    if (s.id === rootId || s === rootSec) {
+      const title = s.title || docTitle || '문서';
+      return {
+        ...s,
+        level: 0,
+        breadcrumbs: [title],
+        parent_section_id: undefined,
+      };
+    }
+
+    const chain: SectionNode[] = [];
+    let curr: SectionNode | undefined = s;
+    const visited = new Set<string>([s.id]);
+
+    while (curr) {
+      const pid: string | undefined = curr.parent_section_id;
+      if (!pid || !secMap.has(pid) || visited.has(pid)) {
+        break;
+      }
+      visited.add(pid);
+      const parentSec: SectionNode = secMap.get(pid)!;
+      chain.push(parentSec);
+      if (parentSec.id === rootId || parentSec === rootSec) {
+        break;
+      }
+      curr = parentSec;
+    }
+
+    const ancestors = [...chain].reverse();
+
+    // 루트 섹션이 조상 체인의 맨 앞에 없으면 루트를 최상위 부모로 연결 (고아 섹션 보호)
+    if (rootSec && (ancestors.length === 0 || ancestors[0].id !== rootId)) {
+      ancestors.unshift(rootSec);
+    }
+
+    const calculatedLevel = ancestors.length;
+    const breadcrumbs = [...ancestors.map((a) => a.title), s.title];
+    const finalParentId = ancestors.length > 0 ? ancestors[ancestors.length - 1].id : rootId;
+
+    return {
+      ...s,
+      level: calculatedLevel,
+      breadcrumbs,
+      parent_section_id: finalParentId,
+    };
+  });
+}
+
+/**
  * 문서 물리적 등장 순서(Page & Block Position)를 기준으로
  * 3단계 계층(Section - Parent - Child)의 전체 ID를 순차적으로 일괄 재정렬(Re-index)합니다.
  * - Section ID: {doc_id}_s00 (루트), {doc_id}_s01, s02...
  * - Parent ID:  {doc_id}_p001, p002, p003...
  * - Child ID:   {doc_id}_c001, c002, c003...
  * - 3단계 간 양방향 참조(parent_section_id, parent_chunk_ids, child_chunk_ids, section_id 등) 일괄 동기화
+ * - 전역 계층 레벨(H0 -> H1 -> H2 -> H3) 및 breadcrumbs 일괄 재계산
  */
 export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResult {
   const synchronizedEtl = syncHierarchyOrder(etl);
@@ -304,12 +382,16 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
   });
 
   // 3. 상호 참조 ID 일괄 갱신
-  const finalSections: SectionNode[] = newSections.map((sec) => ({
+  const mappedSections: SectionNode[] = newSections.map((sec) => ({
     ...sec,
     parent_section_id: sec.parent_section_id ? (sectionIdMap[sec.parent_section_id] || sec.parent_section_id) : undefined,
     parent_chunk_ids: (sec.parent_chunk_ids || []).map((pid) => parentIdMap[pid] || pid).filter(Boolean),
     child_chunk_ids: (sec.child_chunk_ids || []).map((cid) => childIdMap[cid] || cid).filter(Boolean),
   }));
+
+  // 4. 전역 계층 레벨 및 breadcrumbs 일괄 재계산
+  const finalSections = recalculateSectionHierarchy(mappedSections, etl.doc_title);
+  const sectionObjMap = new Map<string, SectionNode>(finalSections.map((s) => [s.id, s]));
 
   const finalParents: ParentChunk[] = newParents.map((parent) => ({
     ...parent,
@@ -322,12 +404,14 @@ export function reindexEtlData(etl: HierarchicalEtlResult): HierarchicalEtlResul
     const newPid = parentIdMap[oldPid] || oldPid;
     const oldSid = child.section_id;
     const newSid = sectionIdMap[oldSid] || oldSid;
+    const sec = sectionObjMap.get(newSid);
 
     return {
       ...child,
       parent_chunk_id: newPid,
       parent_id: newPid,
       section_id: newSid,
+      breadcrumbs: sec?.breadcrumbs ? [...sec.breadcrumbs] : child.breadcrumbs,
     };
   });
 

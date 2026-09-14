@@ -719,6 +719,70 @@ class TestHierarchicalChunker(unittest.TestCase):
         self.assertNotIn("image_url", reindexed_chunk)
         self.assertNotIn("has_image", reindexed_chunk.get("metadata", {}))
 
+    def test_recalculate_section_hierarchy(self):
+        # 파서가 level=2, level=3 등으로 건너뛰어 태깅한 섹션들 시뮬레이션
+        sections = [
+            {"id": "doc_s00", "title": "산재 질병 지침", "level": 0},
+            {"id": "doc_s01", "title": "I.목적", "level": 2, "parent_section_id": "doc_s00"},
+            {"id": "doc_s02", "title": "II.고시 적용기준", "level": 2, "parent_section_id": "doc_s00"},
+            {"id": "doc_s03", "title": "1.공통요건", "level": 3, "parent_section_id": "doc_s02"},
+            {"id": "doc_s04", "title": "가.경추간판탈출증", "level": 3, "parent_section_id": "doc_s03"},
+        ]
+        recalculated = HierarchicalChunker.recalculate_section_hierarchy(sections, doc_title="산재 질병 지침")
+
+        # 루트: H0
+        self.assertEqual(recalculated[0]["level"], 0)
+        self.assertEqual(recalculated[0]["breadcrumbs"], ["산재 질병 지침"])
+
+        # I.목적: 루트 직속 자식이므로 무조건 H1
+        self.assertEqual(recalculated[1]["level"], 1)
+        self.assertEqual(recalculated[1]["breadcrumbs"], ["산재 질병 지침", "I.목적"])
+
+        # II.고시 적용기준: H1
+        self.assertEqual(recalculated[2]["level"], 1)
+
+        # 1.공통요건: II.고시 적용기준의 자식이므로 H2
+        self.assertEqual(recalculated[3]["level"], 2)
+        self.assertEqual(recalculated[3]["breadcrumbs"], ["산재 질병 지침", "II.고시 적용기준", "1.공통요건"])
+
+        # 가.경추간판탈출증: 1.공통요건의 자식이므로 H3
+        self.assertEqual(recalculated[4]["level"], 3)
+        self.assertEqual(recalculated[4]["breadcrumbs"], ["산재 질병 지침", "II.고시 적용기준", "1.공통요건", "가.경추간판탈출증"])
+
+    def test_reindex_updates_section_hierarchy(self):
+        etl_res = {
+            "doc_id": "test_reindex_doc",
+            "doc_title": "가이드라인",
+            "strategy": "general",
+            "sections": [
+                {"id": "test_reindex_doc_s00", "title": "가이드라인", "level": 0},
+                {"id": "test_reindex_doc_s01", "title": "개요", "level": 2, "parent_section_id": "test_reindex_doc_s00", "page_range": [1, 1], "parent_chunk_ids": ["test_reindex_doc_p001"], "child_chunk_ids": ["test_reindex_doc_c001"]},
+                {"id": "test_reindex_doc_s02", "title": "세부내용", "level": 3, "parent_section_id": "test_reindex_doc_s01", "page_range": [2, 2], "parent_chunk_ids": [], "child_chunk_ids": []},
+            ],
+            "parent_chunks": [
+                {"parent_chunk_id": "test_reindex_doc_p001", "id": "test_reindex_doc_p001", "section_id": "test_reindex_doc_s01", "title": "개요 문맥", "text": "텍스트", "token_estimate": 10, "child_chunk_ids": ["test_reindex_doc_c001"], "page_range": [1, 1]}
+            ],
+            "child_chunks": [
+                {"chunk_id": "test_reindex_doc_c001", "parent_chunk_id": "test_reindex_doc_p001", "section_id": "test_reindex_doc_s01", "chunk_type": "paragraph", "text": "단락", "token_estimate": 5, "page_number": 1, "breadcrumbs": []}
+            ]
+        }
+        reindexed = HierarchicalChunker.reindex_etl_result(etl_res)
+
+        # Re-index 후 sections level과 breadcrumbs 검증
+        sec_root = reindexed["sections"][0]
+        sec1 = reindexed["sections"][1]
+        sec2 = reindexed["sections"][2]
+
+        self.assertEqual(sec_root["level"], 0)
+        self.assertEqual(sec1["level"], 1)  # H1으로 교정됨
+        self.assertEqual(sec1["breadcrumbs"], ["가이드라인", "개요"])
+        self.assertEqual(sec2["level"], 2)  # H2로 교정됨
+        self.assertEqual(sec2["breadcrumbs"], ["가이드라인", "개요", "세부내용"])
+
+        # Child chunk breadcrumbs도 동기화되었는지 검증
+        child = reindexed["child_chunks"][0]
+        self.assertEqual(child["breadcrumbs"], ["가이드라인", "개요"])
+
 
 if __name__ == "__main__":
     unittest.main()
