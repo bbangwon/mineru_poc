@@ -215,7 +215,7 @@ export interface EmbedStatusResponse {
     upserted_count: number;
     elapsed_time: number;
     dense_dim: number;
-    export_file: string;
+    export_file?: string;
   };
   error?: string | null;
   elapsed_time: number;

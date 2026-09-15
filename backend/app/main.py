@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from backend.app.services.hierarchical_chunker import HierarchicalChunker
 from backend.app.services.mineru_svc import MineruService
-from backend.app.services.embedding_svc import embedding_svc, EMBEDDED_JSON_PATH
+from backend.app.services.embedding_svc import embedding_svc
 from backend.app.services.qdrant_config_svc import get_qdrant_config, save_qdrant_config
 from backend.app.services.llm_config_svc import (
     LLMConfig,
@@ -620,7 +620,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vectors: bool = True) -> Dict[str, Any]:
     """문서의 파싱 산출물 폴더, Qdrant 벡터, PDF 원본(옵션) 및 캐시를 안전하게 정리"""
     global current_selected_pdf_name, latest_etl_result, latest_content_list_path
-    global _embedded_cache_mtime, _doc_stats_cache
+    global _doc_stats_cache
 
     stem = normalize_text(Path(filename).stem)
     deleted_folders = []
@@ -645,7 +645,7 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
                     except Exception as e:
                         print(f"디렉터리 삭제 실패 {target_dir}: {e}")
 
-    # 3. Qdrant 벡터 및 임베딩 JSON 동기화 정리
+    # 3. Qdrant 벡터 및 매니페스트 동기화 정리
     vector_res = None
     if delete_vectors:
         try:
@@ -654,7 +654,6 @@ def clean_document_artifacts(filename: str, delete_pdf: bool = True, delete_vect
                 sub_stem = Path(d_name).name
                 if sub_stem and sub_stem != stem and sub_stem not in ["ocr", "auto", "txt"]:
                     embedding_svc.delete_document_vectors(sub_stem)
-            _embedded_cache_mtime = 0  # 캐시 강제 무효화
         except Exception as e:
             print(f"벡터 데이터 삭제 실패 ({stem}): {e}")
 
@@ -1425,22 +1424,6 @@ async def api_search_test(req: SearchRequest):
             status_code=500,
             detail=f"하이브리드 검색 중 오류가 발생했습니다: {str(e)}",
         )
-
-
-@app.get("/api/etl/export/vectors")
-async def api_export_vectors():
-    """Dense/Sparse 벡터가 포함된 임베딩 백업 JSON 파일 다운로드"""
-    if not EMBEDDED_JSON_PATH.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="저장된 벡터 데이터 파일이 없습니다. 먼저 Qdrant 인덱싱을 실행하세요.",
-        )
-
-    return FileResponse(
-        path=EMBEDDED_JSON_PATH,
-        media_type="application/json; charset=utf-8",
-        filename="rag_chunks_embedded.json",
-    )
 
 
 # ---------------------------------------------------------

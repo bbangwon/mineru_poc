@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
-EMBEDDED_JSON_PATH = OUTPUT_DIR / "rag_chunks_embedded.json"
 INDEXED_DOCS_MANIFEST_PATH = OUTPUT_DIR / "qdrant_indexed_docs.json"
 
 
@@ -127,23 +126,8 @@ class EmbeddingService:
         except Exception as e:
             logger.warning(f"Qdrant 연결/조회 실패 ({e}). 로컬 인덱스 매니페스트 캐시로 fallback 합니다.")
 
-            # 2. 접속 실패 시 로컬 매니페스트 및 기존 레거시 JSON 캐시에서 복원
+            # 2. 접속 실패 시 로컬 인덱스 매니페스트에서 복원
             cached_names: Set[str] = set(manifest.get("documents", {}).keys())
-
-            if EMBEDDED_JSON_PATH.exists():
-                try:
-                    with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
-                        leg_data = json.load(f)
-                        for chunk in leg_data.get("chunks", []):
-                            payload = chunk.get("payload", {})
-                            bc = payload.get("breadcrumbs", [])
-                            if bc and isinstance(bc, list) and len(bc) > 0:
-                                cached_names.add(str(bc[0]).strip())
-                            did = payload.get("doc_id")
-                            if did:
-                                cached_names.add(str(did).strip())
-                except Exception:
-                    pass
 
             return cached_names, {
                 "connected": False,
@@ -220,7 +204,6 @@ class EmbeddingService:
 
         # 3. Qdrant 포인트 구성
         points: List[Dict[str, Any]] = []
-        embedded_export_data: List[Dict[str, Any]] = []
 
         for i, chunk in enumerate(active_chunks):
             cid = chunk.get("chunk_id") or f"chunk_{i:04d}"
@@ -291,16 +274,6 @@ class EmbeddingService:
                 "payload": payload,
             })
 
-            # 내보내기용 직렬화 데이터 (JSON 호환)
-            embedded_export_data.append({
-                "chunk_id": cid,
-                "dense_vector_dim": len(dn_vec),
-                "sparse_indices_count": len(sp_vec.indices),
-                "sparse_indices": sp_vec.indices,
-                "sparse_values": sp_vec.values,
-                "payload": payload,
-            })
-
         # 컬렉션 생성 (recreate 여부 반영)
         manager.init_collection(target_col, recreate=cfg.recreate_collection)
 
@@ -343,24 +316,6 @@ class EmbeddingService:
         except Exception as e:
             logger.warning(f"인덱스 매니페스트 갱신 실패: {e}")
 
-        # 단일 배치 다운로드/내보내기용 최신 파일 기록
-        try:
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            with open(EMBEDDED_JSON_PATH, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "collection_name": target_col,
-                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "total_chunks": len(points),
-                        "chunks": embedded_export_data,
-                    },
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-        except Exception as e:
-            logger.warning(f"임베딩 JSON 파일 저장 실패: {e}")
-
         elapsed = round(time.time() - start_time, 2)
 
         if progress_callback:
@@ -373,7 +328,6 @@ class EmbeddingService:
             "upserted_count": upserted_count,
             "elapsed_time": elapsed,
             "dense_dim": len(dense_vecs[0]) if dense_vecs else 0,
-            "export_file": str(EMBEDDED_JSON_PATH.name),
         }
 
     def hybrid_search(
@@ -441,7 +395,7 @@ class EmbeddingService:
         config: Optional[QdrantConfig] = None,
         collection_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Qdrant 컬렉션 및 rag_chunks_embedded.json에서 특정 문서의 벡터와 청크를 삭제합니다."""
+        """Qdrant 컬렉션에서 특정 문서의 벡터를 삭제하고 매니페스트를 동기화합니다."""
         cfg = config or get_qdrant_config()
         manager = self.get_manager(cfg)
         target_col = collection_name or cfg.collection_name
@@ -453,44 +407,7 @@ class EmbeddingService:
         except Exception as e:
             logger.warning(f"Qdrant 벡터 포인트 삭제 실패 (문서: {doc_name}): {e}")
 
-        # 2. 로컬 rag_chunks_embedded.json 내 해당 문서 청크 삭제
-        json_deleted_count = 0
-        if EMBEDDED_JSON_PATH.exists():
-            try:
-                with open(EMBEDDED_JSON_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                original_chunks = data.get("chunks", [])
-                filtered_chunks = []
-                for chunk in original_chunks:
-                    p = chunk.get("payload", {})
-                    cid = p.get("doc_id") or ""
-                    ctitle = p.get("doc_title") or ""
-                    bcs = p.get("breadcrumbs", [])
-                    first_bc = str(bcs[0]).strip() if bcs else ""
-
-                    # doc_name과 일치하는 청크 제외 (유니코드 NFC 정규화 적용)
-                    norm_doc = unicodedata.normalize("NFC", doc_name) if doc_name else ""
-                    norm_targets = [unicodedata.normalize("NFC", str(x)) for x in [cid, ctitle, first_bc] if x]
-                    norm_chunk_id = unicodedata.normalize("NFC", str(chunk.get("chunk_id", "")))
-                    matched = (norm_doc in norm_targets or norm_doc in norm_chunk_id)
-                    if not matched and len(norm_doc) >= 10:
-                        matched = any(len(t) >= 10 and (norm_doc.startswith(t) or t.startswith(norm_doc)) for t in norm_targets)
-                    if matched:
-                        json_deleted_count += 1
-                        continue
-                    filtered_chunks.append(chunk)
-
-                data["chunks"] = filtered_chunks
-                data["total_chunks"] = len(filtered_chunks)
-                with open(EMBEDDED_JSON_PATH, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-
-                logger.info(f"rag_chunks_embedded.json에서 {json_deleted_count}개 청크 정리 완료 (문서: {doc_name})")
-            except Exception as e:
-                logger.warning(f"rag_chunks_embedded.json 청크 정리 실패 (문서: {doc_name}): {e}")
-
-        # 3. 로컬 매니페스트에서 해당 문서 삭제
+        # 2. 로컬 매니페스트에서 해당 문서 삭제
         try:
             manifest = load_indexed_docs_manifest()
             docs_dict = manifest.get("documents", {})
@@ -511,7 +428,6 @@ class EmbeddingService:
         return {
             "success": True,
             "qdrant_deleted": qdrant_deleted,
-            "json_deleted_count": json_deleted_count,
         }
 
 

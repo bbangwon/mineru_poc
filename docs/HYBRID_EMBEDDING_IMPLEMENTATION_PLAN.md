@@ -49,7 +49,6 @@ graph TD
         CHUNKS --> C
         B & C --> D
         D --> LOCAL_QDRANT[로컬 임베디드 Qdrant DB<br/>output/qdrant_db/]
-        D --> JSON_OUT[rag_chunks_embedded.json<br/>JSONL 백업]
         STUDIO_UI[검색 테스트 UI] --> D
     end
 
@@ -205,7 +204,6 @@ results = client.query_points(
   * `POST /api/etl/embed` (Qdrant 인덱싱 실행)
   * `GET /api/etl/embed/status` (인덱싱 상태 조회)
   * `POST /api/etl/search/test` (Qdrant RRF 하이브리드 검색)
-  * `GET /api/etl/export/vectors` (벡터 포함 JSONL 내보내기)
 
 ### Phase 3: Frontend UI 확장 (`frontend/src/`)
 * [ ] API 클라이언트 확장 (`frontend/src/api/client.ts`)
