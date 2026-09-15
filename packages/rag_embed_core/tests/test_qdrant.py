@@ -58,3 +58,51 @@ def test_qdrant_manager_in_memory_hybrid():
     assert len(results) > 0
     # doc1이 상위에 랭크되어야 함
     assert results[0].payload.get("chunk_id") == "chunk_001" or results[0].id == "chunk_001"
+
+
+def test_qdrant_manager_custom_vector_names():
+    mem_client = QdrantClient(":memory:")
+    config = QdrantConfig(
+        collection_name="test_custom_vec_col",
+        dense_dim=4,
+        dense_vector_name="text_dense",
+        sparse_vector_name="text_sparse",
+    )
+    manager = QdrantManager(config=config, client=mem_client)
+
+    # 1. 커스텀 벡터 이름으로 컬렉션 생성
+    created = manager.init_collection(collection_name="test_custom_vec_col", recreate=True)
+    assert created is True
+
+    # 컬렉션 스키마 검증
+    col_info = mem_client.get_collection("test_custom_vec_col")
+    assert "text_dense" in col_info.config.params.vectors
+    assert "text_sparse" in col_info.config.params.sparse_vectors
+
+    # 2. 데이터 업서트
+    sparse_encoder = KiwiSparseEncoder()
+    doc1 = "석면 해체 제거 작업 절차 안내"
+    sp1 = sparse_encoder.encode_document(doc1)
+
+    points = [
+        {
+            "id": "chunk_001",
+            "dense_vector": [0.1, 0.2, 0.3, 0.4],
+            "sparse_vector": sp1,
+            "payload": {"text": doc1, "doc_id": "doc_1"},
+        }
+    ]
+    upsert_count = manager.upsert_points(points, collection_name="test_custom_vec_col")
+    assert upsert_count == 1
+
+    # 3. 커스텀 벡터 이름으로 하이브리드 검색
+    query_sparse = sparse_encoder.encode_query("석면 해체")
+    results = manager.search_hybrid(
+        query_dense=[0.1, 0.2, 0.3, 0.4],
+        query_sparse=query_sparse,
+        limit=2,
+        collection_name="test_custom_vec_col",
+    )
+    assert len(results) == 1
+    assert results[0].id == "chunk_001"
+

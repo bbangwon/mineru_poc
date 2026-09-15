@@ -44,3 +44,11 @@ class QdrantConfig(BaseModel):
         default=None,
         description="임베딩 연산 디바이스 (mps, cuda, cpu 또는 None으로 자동 감지)"
     )
+    dense_vector_name: str = Field(
+        default="dense",
+        description="Qdrant 컬렉션의 Dense 벡터 이름 (기본값: dense)"
+    )
+    sparse_vector_name: str = Field(
+        default="sparse",
+        description="Qdrant 컬렉션의 Sparse 벡터 이름 (기본값: sparse)"
+    )

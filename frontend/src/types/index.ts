@@ -190,6 +190,8 @@ export interface QdrantConfig {
   dense_model_name?: string;
   dense_dim?: number;
   batch_size?: number;
+  dense_vector_name?: string;
+  sparse_vector_name?: string;
 }
 
 export interface QdrantTestResponse {

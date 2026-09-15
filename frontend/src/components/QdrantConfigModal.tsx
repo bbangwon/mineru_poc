@@ -39,6 +39,8 @@ export const QdrantConfigModal: React.FC<QdrantConfigModalProps> = ({
     dense_model_name: 'dragonkue/BGE-m3-ko',
     dense_dim: 1024,
     batch_size: 16,
+    dense_vector_name: 'dense',
+    sparse_vector_name: 'sparse',
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -59,7 +61,11 @@ export const QdrantConfigModal: React.FC<QdrantConfigModalProps> = ({
     setTestResult(null);
     try {
       const data = await getQdrantConfig();
-      setConfig(data);
+      setConfig({
+        ...data,
+        dense_vector_name: data.dense_vector_name || 'dense',
+        sparse_vector_name: data.sparse_vector_name || 'sparse',
+      });
     } catch (err: any) {
       setErrorMsg(err.message || '설정을 불러오지 못했습니다.');
     } finally {
@@ -93,11 +99,33 @@ export const QdrantConfigModal: React.FC<QdrantConfigModalProps> = ({
   };
 
   const handleSave = async () => {
+    const denseName = (config.dense_vector_name || '').trim();
+    const sparseName = (config.sparse_vector_name || '').trim();
+
+    if (!denseName) {
+      setErrorMsg('Dense 벡터 이름을 입력해주세요. (기본값: dense)');
+      return;
+    }
+    if (!sparseName) {
+      setErrorMsg('Sparse 벡터 이름을 입력해주세요. (기본값: sparse)');
+      return;
+    }
+    if (denseName === sparseName) {
+      setErrorMsg('Dense 벡터 이름과 Sparse 벡터 이름은 서로 달라야 합니다.');
+      return;
+    }
+
+    const payloadToSave: QdrantConfig = {
+      ...config,
+      dense_vector_name: denseName,
+      sparse_vector_name: sparseName,
+    };
+
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const res = await saveQdrantConfig(config);
+      const res = await saveQdrantConfig(payloadToSave);
       setSuccessMsg('Qdrant 설정이 성공적으로 저장되었습니다.');
       if (onSaved) onSaved(res.config);
       setTimeout(() => {
@@ -283,6 +311,50 @@ export const QdrantConfigModal: React.FC<QdrantConfigModalProps> = ({
               />
             </div>
 
+            {/* Vector Names (Dense & Sparse) */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 text-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  벡터 이름 설정 (Vector Names)
+                </label>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                  기본값: dense, sparse
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    Dense 벡터 이름
+                  </span>
+                  <input
+                    type="text"
+                    value={config.dense_vector_name || ''}
+                    onChange={(e) => setConfig({ ...config, dense_vector_name: e.target.value })}
+                    className="w-full font-mono text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="dense"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Sparse 벡터 이름
+                  </span>
+                  <input
+                    type="text"
+                    value={config.sparse_vector_name || ''}
+                    onChange={(e) => setConfig({ ...config, sparse_vector_name: e.target.value })}
+                    className="w-full font-mono text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    placeholder="sparse"
+                  />
+                </div>
+              </div>
+              <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-normal">
+                Qdrant 컬렉션 생성, 색인 및 RRF 융합 검색 시 식별자로 사용되는 Named Vector 이름입니다.
+              </p>
+            </div>
+
             <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 cursor-pointer select-none hover:bg-slate-100/70 dark:hover:bg-slate-800 transition">
               <input
                 type="checkbox"
@@ -310,9 +382,15 @@ export const QdrantConfigModal: React.FC<QdrantConfigModalProps> = ({
             <div className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed space-y-0.5">
               <p>
                 • <strong className="text-slate-800 dark:text-slate-100">Dense</strong>: {config.dense_model_name} ({config.dense_dim}차원, Mac MPS 가속)
+                <span className="ml-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold font-mono">
+                  [벡터명: {config.dense_vector_name || 'dense'}]
+                </span>
               </p>
               <p>
                 • <strong className="text-slate-800 dark:text-slate-100">Sparse</strong>: Kiwi 형태소 + SHA256 uint32 해시 + Qdrant Modifier.IDF
+                <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
+                  [벡터명: {config.sparse_vector_name || 'sparse'}]
+                </span>
               </p>
             </div>
           </div>

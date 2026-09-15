@@ -97,17 +97,22 @@ class QdrantManager:
             exists = False
 
         if not exists:
-            logger.info(f"신규 하이브리드 컬렉션 생성: {col_name} (Dense {self.config.dense_dim}차원 + Sparse Modifier.IDF)")
+            dense_name = getattr(self.config, "dense_vector_name", "dense") or "dense"
+            sparse_name = getattr(self.config, "sparse_vector_name", "sparse") or "sparse"
+            logger.info(
+                f"신규 하이브리드 컬렉션 생성: {col_name} "
+                f"(Dense '{dense_name}' {self.config.dense_dim}차원 + Sparse '{sparse_name}' Modifier.IDF)"
+            )
             client.create_collection(
                 collection_name=col_name,
                 vectors_config={
-                    "dense": models.VectorParams(
+                    dense_name: models.VectorParams(
                         size=self.config.dense_dim,
                         distance=models.Distance.COSINE,
                     )
                 },
                 sparse_vectors_config={
-                    "sparse": models.SparseVectorParams(
+                    sparse_name: models.SparseVectorParams(
                         modifier=models.Modifier.IDF,  # Qdrant 서버사이드 IDF 자동 연산
                     )
                 },
@@ -138,6 +143,9 @@ class QdrantManager:
         client = self.get_client()
         col_name = collection_name or self.config.collection_name
         self.init_collection(col_name, recreate=False)
+
+        dense_name = getattr(self.config, "dense_vector_name", "dense") or "dense"
+        sparse_name = getattr(self.config, "sparse_vector_name", "sparse") or "sparse"
 
         bsize = batch_size or self.config.batch_size
         total_upserted = 0
@@ -172,8 +180,8 @@ class QdrantManager:
                     models.PointStruct(
                         id=point_id,
                         vector={
-                            "dense": dense_vec,
-                            "sparse": models.SparseVector(
+                            dense_name: dense_vec,
+                            sparse_name: models.SparseVector(
                                 indices=sparse_indices,
                                 values=sparse_values,
                             ),
@@ -204,6 +212,9 @@ class QdrantManager:
             logger.warning(msg)
             raise ValueError(msg)
 
+        dense_name = getattr(self.config, "dense_vector_name", "dense") or "dense"
+        sparse_name = getattr(self.config, "sparse_vector_name", "sparse") or "sparse"
+
         prefetch_limit = max(limit * 2, 20)
 
         prefetch_list = []
@@ -215,7 +226,7 @@ class QdrantManager:
                         indices=query_sparse.indices,
                         values=query_sparse.values,
                     ),
-                    using="sparse",
+                    using=sparse_name,
                     limit=prefetch_limit,
                     filter=query_filter,
                 )
@@ -226,7 +237,7 @@ class QdrantManager:
             prefetch_list.append(
                 models.Prefetch(
                     query=query_dense,
-                    using="dense",
+                    using=dense_name,
                     limit=prefetch_limit,
                     filter=query_filter,
                 )
