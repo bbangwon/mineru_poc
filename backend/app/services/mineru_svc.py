@@ -51,8 +51,21 @@ class MineruService:
         method: str = "auto",
         formula: bool = True,
     ) -> Dict[str, Any]:
+        # macOS NFD 자모 분리로 인한 MinerU 파일명 바이트 초과(MAX_TASK_STEM_BYTES 200) 및 잘림 방지를 위해 NFC로 정규화
+        if not unicodedata.is_normalized("NFC", pdf_path.name):
+            try:
+                nfc_name = unicodedata.normalize("NFC", pdf_path.name)
+                temp_path = pdf_path.with_name(f"_tmp_norm_{pdf_path.stem}.pdf")
+                pdf_path.rename(temp_path)
+                target_nfc_path = pdf_path.with_name(nfc_name)
+                temp_path.rename(target_nfc_path)
+                pdf_path = target_nfc_path
+                logger.info(f"Normalized PDF filename from NFD to NFC: {nfc_name}")
+            except Exception as e:
+                logger.warning(f"Could not rename PDF to NFC: {e}")
+
         output_dir.mkdir(parents=True, exist_ok=True)
-        pdf_name = pdf_path.stem
+        pdf_name = unicodedata.normalize("NFC", pdf_path.stem)
 
         cmd = [
             self.mineru_cmd,

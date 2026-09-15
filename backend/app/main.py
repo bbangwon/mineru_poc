@@ -151,10 +151,12 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
                 latest_content_list_path = found[0]
                 content_list = found[1]
 
-        chunker = HierarchicalChunker(doc_id=pdf_path.stem)
-        etl_res = chunker.chunk_content_list(content_list, doc_title=pdf_path.stem, strategy=strategy)
+        stem_nfc = unicodedata.normalize("NFC", pdf_path.stem)
+        pdf_name_nfc = unicodedata.normalize("NFC", pdf_path.name)
+        chunker = HierarchicalChunker(doc_id=stem_nfc)
+        etl_res = chunker.chunk_content_list(content_list, doc_title=stem_nfc, strategy=strategy)
         etl_res["elapsed_time"] = parse_res.get("elapsed_time", round(time.time() - start_time, 1))
-        etl_res["active_pdf"] = pdf_path.name
+        etl_res["active_pdf"] = pdf_name_nfc
         etl_res["total_pages"] = get_pdf_page_count(pdf_path)
 
         etl_res["backend"] = backend
@@ -162,7 +164,7 @@ def process_etl_job(task_id: str, req_data: dict, pdf_path_str: str):
         etl_res["strategy"] = strategy
 
         latest_etl_result = etl_res
-        current_selected_pdf_name = pdf_path.name
+        current_selected_pdf_name = pdf_name_nfc
 
         job["status"] = "completed"
         job["progress_msg"] = "파싱 및 청킹 완료"
@@ -568,11 +570,16 @@ async def list_pdfs():
 async def select_pdf(req: SelectPdfRequest):
     """활성 파싱 대상 PDF 변경"""
     global current_selected_pdf_name
-    target = DOCS_DIR / req.filename
+    norm_name = unicodedata.normalize("NFC", req.filename)
+    target = DOCS_DIR / norm_name
     if not target.exists():
-        extra = BASE_DIR / "pdfs" / req.filename
+        target = DOCS_DIR / req.filename
+    if not target.exists():
+        extra = BASE_DIR / "pdfs" / norm_name
         if extra.exists():
             target = extra
+        elif (BASE_DIR / "pdfs" / req.filename).exists():
+            target = BASE_DIR / "pdfs" / req.filename
         else:
             # macOS NFD/NFC 정규화로 한번 더 탐색
             req_norm = normalize_text(req.filename)
@@ -581,29 +588,30 @@ async def select_pdf(req: SelectPdfRequest):
                 target = matched[0]
             else:
                 raise HTTPException(status_code=404, detail="PDF file not found")
-    current_selected_pdf_name = req.filename
+    current_selected_pdf_name = target.name
     pages = get_pdf_page_count(target)
-    return {"success": True, "current": req.filename, "total_pages": pages}
+    return {"success": True, "current": target.name, "total_pages": pages}
 
 
 @app.post("/api/pdf/upload")
 async def upload_pdf(file: UploadFile = File(...)):
-    """신규 PDF 파일 업로드 및 자동 활성화"""
+    """신규 PDF 파일 업로드 및 자동 활성화 (NFC 정규화 적용)"""
     global current_selected_pdf_name
-    if not file.filename.lower().endswith(".pdf"):
+    clean_filename = unicodedata.normalize("NFC", file.filename)
+    if not clean_filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    save_path = DOCS_DIR / file.filename
+    save_path = DOCS_DIR / clean_filename
     with open(save_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
-    current_selected_pdf_name = file.filename
+    current_selected_pdf_name = clean_filename
     pages = get_pdf_page_count(save_path)
     return {
         "success": True,
-        "filename": file.filename,
+        "filename": clean_filename,
         "total_pages": pages,
         "size_bytes": save_path.stat().st_size,
     }
@@ -762,22 +770,43 @@ async def get_sample_etl(strategy: Optional[str] = "general", filename: Optional
     file_path, content_list = found
     latest_content_list_path = file_path
 
+    # 원본 target_doc의 stem을 최우선 doc_name으로 채택하여 MinerU의 바이트 잘림 방지 및 NFC 정규화
+    raw_doc_name = Path(target_doc).stem if target_doc else file_path.parent.parent.name
+    doc_name = unicodedata.normalize("NFC", raw_doc_name)
+    target_doc_nfc = unicodedata.normalize("NFC", target_doc)
+
     # rag_chunks_edited.json 존재 시 우선 로드
     edited_path = file_path.parent / "rag_chunks_edited.json"
     if edited_path.exists():
         try:
             with open(edited_path, "r", encoding="utf-8") as f:
                 edited_data = json.load(f)
-                edited_data["active_pdf"] = target_doc
+                edited_data["active_pdf"] = target_doc_nfc
+                old_truncated = file_path.parent.parent.name
+                if not edited_data.get("doc_title") or normalize_text(edited_data.get("doc_title", "")) == normalize_text(old_truncated):
+                    edited_data["doc_title"] = doc_name
+                if edited_data.get("sections"):
+                    root_s = edited_data["sections"][0]
+                    if normalize_text(root_s.get("title", "")) == normalize_text(old_truncated) or not root_s.get("title"):
+                        root_s["title"] = doc_name
+                    HierarchicalChunker.recalculate_section_hierarchy(edited_data["sections"], doc_title=doc_name)
+                for c in edited_data.get("child_chunks", []):
+                    meta = c.get("metadata", {})
+                    if normalize_text(meta.get("doc_title", "")) == normalize_text(old_truncated):
+                        meta["doc_title"] = doc_name
+                    if c.get("breadcrumbs") and normalize_text(c["breadcrumbs"][0]) == normalize_text(old_truncated):
+                        c["breadcrumbs"][0] = doc_name
+                for p in edited_data.get("parent_chunks", []):
+                    if p.get("breadcrumbs") and normalize_text(p["breadcrumbs"][0]) == normalize_text(old_truncated):
+                        p["breadcrumbs"][0] = doc_name
                 latest_etl_result = edited_data
                 return edited_data
         except Exception as e:
             print(f"Failed to load edited chunks: {e}")
 
-    doc_name = file_path.parent.parent.name
     chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strategy or "general")
-    etl_res["active_pdf"] = target_doc
+    etl_res["active_pdf"] = target_doc_nfc
 
     latest_etl_result = etl_res
     return etl_res
@@ -877,9 +906,11 @@ async def reset_etl_result(req: Optional[ResetRequest] = None):
         raise HTTPException(status_code=500, detail=f"원본 데이터 로드 실패: {str(e)}")
 
     strat = (req.strategy if req and req.strategy else None) or "general"
-    doc_name = target_content_list_path.parent.parent.name
+    preferred_name = current_selected_pdf_name or target_content_list_path.parent.parent.name
+    doc_name = unicodedata.normalize("NFC", Path(preferred_name).stem)
     chunker = HierarchicalChunker(doc_id=doc_name)
     etl_res = chunker.chunk_content_list(content_list, doc_title=doc_name, strategy=strat)
+    etl_res["active_pdf"] = unicodedata.normalize("NFC", preferred_name)
 
     latest_etl_result = etl_res
     return etl_res
@@ -1027,7 +1058,7 @@ async def export_jsonl(filename: Optional[str] = None):
 
     target_name = filename or current_selected_pdf_name
     if target_name:
-        stem = Path(target_name).stem
+        stem = unicodedata.normalize("NFC", Path(target_name).stem)
         found = find_latest_content_list(stem)
         if found:
             file_path, content_list = found
@@ -1038,6 +1069,23 @@ async def export_jsonl(filename: Optional[str] = None):
                 try:
                     with open(edited_path, "r", encoding="utf-8") as f:
                         target_data = json.load(f)
+                        old_truncated = file_path.parent.parent.name
+                        if not target_data.get("doc_title") or normalize_text(target_data.get("doc_title", "")) == normalize_text(old_truncated):
+                            target_data["doc_title"] = stem
+                        if target_data.get("sections"):
+                            root_s = target_data["sections"][0]
+                            if normalize_text(root_s.get("title", "")) == normalize_text(old_truncated) or not root_s.get("title"):
+                                root_s["title"] = stem
+                            HierarchicalChunker.recalculate_section_hierarchy(target_data["sections"], doc_title=stem)
+                        for c in target_data.get("child_chunks", []):
+                            meta = c.get("metadata", {})
+                            if normalize_text(meta.get("doc_title", "")) == normalize_text(old_truncated):
+                                meta["doc_title"] = stem
+                            if c.get("breadcrumbs") and normalize_text(c["breadcrumbs"][0]) == normalize_text(old_truncated):
+                                c["breadcrumbs"][0] = stem
+                        for p in target_data.get("parent_chunks", []):
+                            if p.get("breadcrumbs") and normalize_text(p["breadcrumbs"][0]) == normalize_text(old_truncated):
+                                p["breadcrumbs"][0] = stem
                 except Exception:
                     pass
             if not target_data:
@@ -1053,12 +1101,15 @@ async def export_jsonl(filename: Optional[str] = None):
             found = find_latest_content_list()
             if found:
                 file_path, content_list = found
+                preferred_title = current_selected_pdf_name or file_path.parent.parent.name
+                doc_title = unicodedata.normalize("NFC", Path(preferred_title).stem)
                 chunker = HierarchicalChunker(
-                    doc_id=HierarchicalChunker.generate_doc_id(file_path.parent.parent.name)
+                    doc_id=HierarchicalChunker.generate_doc_id(doc_title)
                 )
                 target_data = chunker.chunk_content_list(
-                    content_list, doc_title=file_path.parent.parent.name
+                    content_list, doc_title=doc_title
                 )
+                target_title = doc_title
             else:
                 raise HTTPException(
                     status_code=404, detail="No ETL data available to export"
@@ -1299,10 +1350,11 @@ async def api_embed_chunks(req: EmbedRequest, background_tasks: BackgroundTasks)
         else:
             found = find_latest_content_list()
             if found:
-                file_path, content_list = found
-                chunker = HierarchicalChunker(doc_id="doc_asbestos")
+                preferred_title = current_selected_pdf_name or file_path.parent.parent.name
+                doc_title = unicodedata.normalize("NFC", Path(preferred_title).stem)
+                chunker = HierarchicalChunker(doc_id=HierarchicalChunker.generate_doc_id(doc_title))
                 latest_etl_result = chunker.chunk_content_list(
-                    content_list, doc_title=file_path.parent.parent.name
+                    content_list, doc_title=doc_title
                 )
                 chunks_to_embed = latest_etl_result.get("child_chunks", [])
                 parent_chunks_to_embed = latest_etl_result.get("parent_chunks", [])
